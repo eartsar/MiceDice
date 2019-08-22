@@ -1,0 +1,17 @@
+# Don't commit this file to your repository.
+
+# Your secret bot token.
+bot_token: <secret bot token here>
+
+# These are the emojis to use for display purposes.
+# This requires the ID for the emoji, NOT the text.
+# You can find out the id to use by escaping the emoji in discord.
+snake_emoji: <emoji for snakes>
+swords_emoji: <emoji for swords>
+axe_emoji: <emoji for axes>
+
+# Path to the saved results json file (will create file automatically)
+saved_rolls_path: /path/to/file
+
+# GM role. This is for output tweaks.
+gm_role: GM

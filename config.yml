@@ -1,17 +1,42 @@
 # Don't commit this file to your repository.
 
+# =========REQUIRED FIELDS=========
 # Your secret bot token.
-bot_token: <secret bot token here>
+bot_token: <secret_bot_token>
 
-# These are the emojis to use for display purposes.
-# This requires the ID for the emoji, NOT the text.
-# You can find out the id to use by escaping the emoji in discord.
-snake_emoji: <emoji for snakes>
-swords_emoji: <emoji for swords>
-axe_emoji: <emoji for axes>
-
-# Path to the saved results json file (will create file automatically)
-saved_rolls_path: /path/to/file
+# Your discord server ID
+server_id: <discord_server_id>
 
 # GM role. This is for output tweaks.
 gm_role: GM
+
+
+# =========ROLL SAVING (OPTIONAL)=========
+# Set to true if you want to save rolls
+use_persist: false
+
+# Path to the saved results json file (will create file automatically)
+saved_rolls_path: <rolls_json_path>
+
+
+# =========EMOJIS (OPTIONAL)=========
+# Set to true if you want to use emojis for things
+use_custom_emojis: false
+
+# These are the emojis to use for display purposes.
+# This requires the ID for custom emojis, NOT the text.
+# You can find out the id to use by escaping the emoji in discord.
+snake_emoji: <snake_emoji_id>
+swords_emoji: <sword_emoji_id>
+axe_emoji: <axe_emoji_id>
+
+
+# =========GOOGLE SHEETS (OPTIONAL)=========
+# Set to true to use google sheets integration (totally hacked together)
+use_google_sheets: false
+
+# Path to the Google Application Service Account Credentials File (tm) (c) (r)
+google_service_account_creds: <credentials_file>
+
+# URL to the Google Sheets that will have all the player sheets
+google_sheets_url: <google_sheets_url>

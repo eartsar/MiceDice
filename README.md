@@ -25,8 +25,21 @@ You know your browser has a "back" button, right?
     !last
 
 ## TODOs
-* Fix bugs
-* Specify obstacles in rolls optionally `!roll 4ob3 boatcrafting` and automatically display a success/failure/tie result.
-* Optionally turn off emoji rendering, and display raw numbers (or dice emojis) instead.
-* Use sqlite for saving roll history.
-* Point trackers?
+* Code Quality... seriously...
+* Back rolls in a proper DB, not a JSON file
+* Fix a ton of bugs
+* File a ton of bugs so I can fix them
+
+
+## EXPERIMENTAL: Google Sheets Integration
+There's a lot of churn on the steps to set this up, because it's under development - which is really a loose way of saying I have no idea what I'm doing.
+
+Setting up a Google Application... Application  
+- Create a project here: https://console.developers.google.com/
+- Add/Enable the Google Sheets & Google Drive APIs here: https://console.developers.google.com/apis/
+- Create OAUTH2 credentials here: https://console.developers.google.com/apis/credentials
+	- Make sure you create credentials for a SERVICE ACCOUNT associated with the app.
+- Download the credentials JSON file. This is referenced in the MiceDice configuration.
+- Copy the [template sheet](https://docs.google.com/spreadsheets/d/1Ehj1Kc933fx8MCDSob_gUi1sJPIKDA0Yq-TAsKV7gQk/)
+- Share the sheet with the service acount email address.
+- For each sheet, put the discord user's ID in the top left cell

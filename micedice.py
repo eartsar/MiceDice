@@ -34,7 +34,7 @@ GOOGLE_SHEETS_URL = config['google_sheets_url']
 
 # Meh, I'll just use regexes to parse commands. Easy enough.
 ROLL_REGEX = re.compile(r'\!roll (\d{1,2})(?:\s?[Oo][Bb]\s?(\d))?(?:(?: for )?(.+))?')
-NUDGE_REGEX = re.compile(r'\!(nudge|reroll|explode) ?(\d|all)?')
+NUDGE_REGEX = re.compile(r'\!(reroll|explode) ?(\d|all)?')
 LAST_REGEX = re.compile(r'\!last')
 RATING_REGEX = re.compile(r'\!(rating|progress)(?: (.+))? (.+)')
 
@@ -42,12 +42,10 @@ USER_ID_REGEX = re.compile(r'<@!(\d+)>')
 
 # Catch-all regex. Doesn't look at args.
 # User attempted to use a command with bad syntax, or needs help.
-USAGE_REGEX = re.compile(r'\!(:?help|usage|roll|nudge)')
+USAGE_REGEX = re.compile(r'\!(:?help|usage|roll|reroll|explode|last|rating|progress)')
 
 # Aliases for commands. Shortcuts. Alternates.
-ALIASES = {
-    '!explode': '!nudge explode'
-}
+ALIASES = {}
 
 USE_CUSTOM_EMOJIS = config['use_custom_emojis']
 USE_SHEETS = config['use_google_sheets']
@@ -261,7 +259,7 @@ class MiceDice(discord.Client):
 
 
     async def nudge(self, message, method, num_dice):
-        '''!nudge <dice>, !explode <dice>'''
+        '''!reroll <dice>, !explode <dice>'''
         # User must have results to nudge.
         if message.author.id not in self.saved_results:
             await message.channel.send(f"**{message.author.mention}** hasn't rolled before!")
@@ -285,12 +283,14 @@ class MiceDice(discord.Client):
                 return await message.channel.send(f"**{message.author.mention}** doesn't have any {AXE_EMOJI} to explode!")
             num_dice = len(axes) if num_dice >= len(axes) else num_dice
             nudge_str, result = await self.explode(message, result, num_dice)
-        else:
+        elif method == 'reroll':
             snakes = [_ for _ in result if _ < 4]
             if len(snakes) == 0:
                 return await message.channel.send(f"**{message.author.mention}** doesn't have any {SNAKE_EMOJI} to re-roll!")
             num_dice = len(snakes) if num_dice >= len(snakes) else num_dice
             nudge_str, result = await self.reroll(message, result, num_dice)
+        else:
+            return
 
         # Print and persist
         dice_result_str = await self.resolve_dice_result_str(result, obstacle)
@@ -355,7 +355,8 @@ class MiceDice(discord.Client):
         await message.channel.send(
                 f'```Usage:\n'
                 f'\t!roll <dice> [Ob <req>] [for <reason>]\n'
-                f'\t!nudge <explode|one|all>\n'
+                f'\t!reroll <quantity>\n'
+                f'\t!explode <quantity>\n'
                 f'\t!last'
                 f'```'
         )

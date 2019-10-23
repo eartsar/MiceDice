@@ -1,5 +1,5 @@
 import os.path
-import gspread
+import pygsheets
 from oauth2client.service_account import ServiceAccountCredentials
 
 from cells import sheet_index
@@ -33,14 +33,22 @@ def load_sheets(creds_path, sheet_url, player_discord_ids):
     dictionary of discord_id --> GoogleBackedSheet object'''
     print("  Loading google sheets for players...")
     player_discord_ids = [str(_) for _ in player_discord_ids]
+    
     # Authenticate to google sheets, get creds
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(creds_path, SCOPES)
+    # credentials = ServiceAccountCredentials.from_json_keyfile_name(creds_path, SCOPES)
+    
     # Make the gspread client. This makes getting values easy.
-    gc = gspread.authorize(credentials)
+    # gc = gspread.authorize(credentials)
+    # gc.session = AuthorizedSession(credentials)
+    # worksheets = gc.open_by_url(sheet_url).worksheets()
+
+    # Make the pygsheets client. This makes getting values easy
+    gc = pygsheets.authorize(service_file=creds_path)
     worksheets = gc.open_by_url(sheet_url).worksheets()
+
     sheets = {}
     for sheet in worksheets:
-        discord_id = sheet.acell(DISCORD_ID_CELL).value
+        discord_id = sheet.cell(DISCORD_ID_CELL).value
         if discord_id in player_discord_ids:
             discord_id = int(discord_id)
             sheets[discord_id] = GoogleBackedSheet(sheet)

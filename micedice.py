@@ -37,6 +37,7 @@ ROLL_REGEX = re.compile(r'\!roll (\d{1,2})(?:\s?[Oo][Bb]\s?(\d))?(?:(?: for )?(.
 NUDGE_REGEX = re.compile(r'\!(reroll|explode) ?(\d|all)?')
 LAST_REGEX = re.compile(r'\!last')
 RATING_REGEX = re.compile(r'\!(rating|progress)(?: (.+))? (.+)')
+FORCE_REGEX = re.compile(r'\!force ((?:\d+,?\s*)*\d+)')
 
 USER_ID_REGEX = re.compile(r'<@!(\d+)>')
 
@@ -115,6 +116,7 @@ class MiceDice(discord.Client):
         '''Load the saved roll results from the server-backed file json file.'''
         super().__init__()
         self.saved_results = {}
+        self.forced_values = []
 
         print("Initializing MiceDice...")
         # Create the file (empty json) if it doesn't exist yet
@@ -152,6 +154,9 @@ class MiceDice(discord.Client):
                 obstacle = m.group(2)
                 reason = m.group(3)
                 await self.roll(message, num_dice, obstacle, reason)
+            elif m.match(FORCE_REGEX):
+                values = m.group(1)
+                await self.force(message, values)
             elif m.match(NUDGE_REGEX):
                 method = m.group(1)
                 num_dice = m.group(2)
@@ -228,6 +233,11 @@ class MiceDice(discord.Client):
         await message.channel.send(msg)
 
 
+    async def force(self, message, values):
+        self.forced_values = [int(_) for _ in values.replace(',', ' ').split()]
+        await message.channel.send('Forcing values: ' + str(self.forced_values))
+
+
     async def roll(self, message, num_dice, obstacle, reason):
         '''!roll <#> [Ob #] [for <reason>]'''
         try:
@@ -249,6 +259,13 @@ class MiceDice(discord.Client):
 
         # roll dice
         result = sorted([random.randint(1, 6) for i in range(num_dice)])
+
+        # used forced values, potentially
+        if self.forced_values:
+            result = self.forced_values + result
+            result = result[:num_dice]
+            result = sorted(result)
+            self.forced_values = []
         
         roll_str = f"**{message.author.mention}** is rolling **{num_dice}** dice"
         reason_str = f'**for {reason}**' if reason else ''

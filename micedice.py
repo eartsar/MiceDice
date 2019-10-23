@@ -234,6 +234,8 @@ class MiceDice(discord.Client):
 
 
     async def force(self, message, values):
+        if not GM_ROLE in [_.name for _ in message.author.roles]:
+            return
         self.forced_values = [int(_) for _ in values.replace(',', ' ').split()]
         await message.channel.send('Forcing values: ' + str(self.forced_values))
 
@@ -261,7 +263,7 @@ class MiceDice(discord.Client):
         result = sorted([random.randint(1, 6) for i in range(num_dice)])
 
         # used forced values, potentially
-        if self.forced_values:
+        if self.forced_values and GM_ROLE in [_.name for _ in message.author.roles]:
             result = self.forced_values + result
             result = result[:num_dice]
             result = sorted(result)

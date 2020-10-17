@@ -8,8 +8,5 @@ verify_ssl = true
 [packages]
 discord-py = "*"
 pyyaml = "*"
-gspread = "*"
+pygsheets = "*"
 oauth2client = "*"
-
-[requires]
-python_version = "3.6"

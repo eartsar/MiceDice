@@ -344,7 +344,7 @@ class RollBuilder():
 {reaction.message.channel.id}/\
 {reaction.message.id}'
             msg += "\n```" + "\n".join([str(_) for _ in self.pool.result_history]) + "```"
-            await self.owner.send(msg)
+            await self.message.channel.send(msg)
             return
 
         await self.steps[0](reaction)

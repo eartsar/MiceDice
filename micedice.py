@@ -110,7 +110,6 @@ class MiceDice(discord.Client):
     def __init__(self):
         '''Load the saved roll results from the server-backed file json file.'''
         super().__init__()
-        self.saved_results = {}
         self.forced_values = []
 
         print("Initializing MiceDice...")
@@ -174,7 +173,7 @@ class MiceDice(discord.Client):
         rating = sheet.get_rating(skill)
 
         if not rating:
-            return f'{player.display_name}\'s {skill} rating: **Not yet learing!**'
+            return f'{player.display_name}\'s {skill} rating: **Not yet learning!**'
         
         msg = f'{player.display_name}\'s {skill} rating: **{"Learning!" if rating == "x" else rating}**'
         if progress:
@@ -273,16 +272,6 @@ class MiceDice(discord.Client):
                 f'\t!roll <dice> [Ob <req>] [for <reason>]\n'
                 f'```'
         )
-
-
-    async def fetch_result_details(self, key):
-        if key not in self.saved_results:
-            return
-
-        results = self.saved_results[key]['results']
-        reason = self.saved_results[key]['reason']
-        obstacle = self.saved_results[key]['obstacle']
-        return results, obstacle, reason
 
 
     async def resolve_dice_result_str(self, result, obstacle=None, tagged=None):

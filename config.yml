@@ -11,16 +11,8 @@ server_id: <discord_server_id>
 gm_role: GM
 
 
-# =========ROLL SAVING (OPTIONAL)=========
-# Set to true if you want to save rolls
-use_persist: false
-
-# Path to the saved results json file (will create file automatically)
-saved_rolls_path: <rolls_json_path>
-
-
-# =========EMOJIS (OPTIONAL)=========
-# Set to true if you want to use emojis for things
+# =========CUSTOM EMOJIS (OPTIONAL)=========
+# Set to true if you want to use custom emojis for things
 use_custom_emojis: false
 
 # These are the emojis to use for display purposes.

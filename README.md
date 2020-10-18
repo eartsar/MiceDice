@@ -16,21 +16,18 @@ Yeah...
 `python3 micedice.py --config /path/to/config.yml`
 
 ## I want to use it.
-    !help
-    !roll <#> [for <reason>]
-    !explode [#]
-    !reroll [#]
-    !last
+    !help							list commands
+    !roll 							initiate the roll builder
+    !roll 4   						quick roll dice
+    !roll 3 for nature 				quick roll dice with reason commentary
+    !roll 6 ob 3 for insectrist		quick roll dice against an obstacle with commentary
 
 ## TODOs
 * More sheets integration
 * A better formatted/validated sheet
-* Code Quality... seriously...
-* Back rolls in a proper DB, not a JSON file
+* Code Quality... seriously... (lol)
 * Eventually, I'd want a better roll macro system
 * Optional automatic progression tracking
-* Fix a ton of bugs
-* File a ton of bugs so I can fix them
 
 
 ## HACKED TOGETHER: Google Sheets Integration

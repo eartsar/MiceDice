@@ -9,7 +9,9 @@ import yaml
 import discord
 
 from sheets import load_sheets, check_valid_skill
+
 import rollbuild
+from util import to_emoji_str
 
 
 parser = argparse.ArgumentParser(description='Run the MiceDice bot.')
@@ -60,6 +62,7 @@ if USE_CUSTOM_EMOJIS:
     SWORDS_EMOJI = config['swords_emoji']
     AXE_EMOJI = config['axe_emoji']
     EMOJI_MAP = {
+        0: ':empty:',
         1: SNAKE_EMOJI,
         2: SNAKE_EMOJI,
         3: SNAKE_EMOJI,
@@ -69,6 +72,7 @@ if USE_CUSTOM_EMOJIS:
     }
 else:
     EMOJI_MAP = {
+        0: ':empty:',
         1: ':one:',
         2: ':two:',
         3: ':three:',
@@ -81,6 +85,7 @@ else:
 # 30 max is beyond reasonable, and is spammy enough
 # https://forums.burningwheel.com/t/maximum-of-dice/8561/6
 MAXIMUM_NUMBER_OF_DICE = 30
+
 
 
 class ValueRetainingRegexMatcher:
@@ -154,9 +159,11 @@ class MiceDice(discord.Client):
 
 
     async def on_reaction_add(self, reaction, user):
+        # If the reaction was from this bot, ignore it
         if user == self.user:
             return
         
+        # If the reaction was to a "roll build" comment, and the reactor is the owner of it...
         if reaction.message.author.id == self.user.id and await rollbuild.is_roll(reaction.message) and await rollbuild.owns_roll(user, reaction.message):
             await rollbuild.next(reaction)
 
@@ -268,11 +275,6 @@ class MiceDice(discord.Client):
         )
 
 
-    async def to_emoji_str(self, result):
-        '''Converts a list of d6 numbers to emojis, then joins by spaces.'''
-        return " ".join([EMOJI_MAP[_] for _ in result])
-
-
     async def fetch_result_details(self, key):
         if key not in self.saved_results:
             return
@@ -284,7 +286,7 @@ class MiceDice(discord.Client):
 
 
     async def resolve_dice_result_str(self, result, obstacle=None, tagged=None):
-        result_str = await self.to_emoji_str(result)
+        result_str = to_emoji_str(result)
         success_str = ''
         if obstacle:
             success = len([_ for _ in result if _ >= 4]) >= obstacle

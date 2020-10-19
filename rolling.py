@@ -1,53 +1,145 @@
-from decimal import Decimal, ROUND_HALF_UP
 import asyncio
 import random
-import dicepool
+from decimal import Decimal, ROUND_HALF_UP
+from abc import ABC, abstractmethod
+
+from dice import DicePool
 from util import to_emoji_str
 
-# Cache for roll "builders". Key is the concat of a user ID and a channel ID (for now).
-ROLL_CACHE_BY_REQUEST = {}
-ROLL_CACHE_BY_MESSAGE = {}
 
 # mapping of emoji to numeric value
 NUM_MAP = {'0️⃣': 0, '1️⃣': 1, '2️⃣': 2, '3️⃣': 3, '4️⃣': 4, '5️⃣': 5, '6️⃣': 6, '7️⃣': 7}
 
-
-async def is_roll(message):
-    return message.id in ROLL_CACHE_BY_MESSAGE
-
-
-async def owns_roll(user, message):
-    return message.id in ROLL_CACHE_BY_MESSAGE and ROLL_CACHE_BY_MESSAGE[message.id].owner.id == user.id
+# 30 max is beyond reasonable, and is spammy enough
+# https://forums.burningwheel.com/t/maximum-of-dice/8561/6
+MAXIMUM_NUMBER_OF_DICE = 30
 
 
-async def start_roll(user, channel):
-    key = str(user.id) + "_" + str(channel.id)
-    if key in ROLL_CACHE_BY_REQUEST:
-        await ROLL_CACHE_BY_REQUEST[key].cancel()
+class RollerManager():
+    '''
+    The roller manager is basically just in charge of creating Roller instances, and managing the
+    caches for referencing currently pending rolls. There are two types of Rollers: Basic and Interactive.
     
-    message = await channel.send(f'{user.mention}\'s roll: Initializing...')
-    roll = RollBuilder(user, message)
-    ROLL_CACHE_BY_MESSAGE[message.id] = roll
-    ROLL_CACHE_BY_REQUEST[key] = roll
-    await roll.next()
+    In both cases, a "roll" message is a response to a !roll command from a user, which will have roll
+    results present in it.
+
+    Basic rollers are more or less a one-and-done roll. They set up a dice pool, resolve immediately, and
+    return the result in edited message form.
+
+    Interactive rollers modify the original response message with questions and information to help guide
+    a user to give it the information necessary to compute what to roll per Mouse Guard RPG rules. As such
+    they are very stateful. The bot populates these messages with valid emoji choices that the user can
+    click to respond to questions, giving information to the bot. These messages remain "open" until the
+    roll is cancelled, or is completed. This manager retains caches for "open" roll messages.'''
+    def __init__(self):
+        # Caches for roll "builders".
+        self.roll_cache_by_request = {}
+        self.roll_cache_by_message = {}
+        self.lock = asyncio.Lock()
 
 
-async def next(reaction):
-    roll = ROLL_CACHE_BY_MESSAGE[reaction.message.id]
-    await roll.next(reaction=reaction)
+    def _generate_request_key(self, user, channel):
+        return str(user.id) + "_" + str(channel.id)
 
 
-def unregister(roll):
-    del ROLL_CACHE_BY_MESSAGE[roll.message.id]
-    key = str(roll.owner.id) + "_" + str(roll.message.channel.id)
-    del ROLL_CACHE_BY_REQUEST[key]
+    async def uncache_roll(self, roll):
+        async with self.lock:
+            key = self._generate_request_key(roll.owner, roll.message)
+            del self.roll_cache_by_message[roll.message.id]
+            del self.roll_cache_by_request[key]
 
 
+    async def cache_roll(self, roll):
+        async with self.lock:
+            key = self._generate_request_key(roll.owner, roll.message)
+            self.roll_cache_by_message[roll.message.id] = roll
+            self.roll_cache_by_request[key] = roll
 
-class RollBuilder():
-    def __init__(self, owner, message):
+
+    async def create(self, user, channel, **kwargs):
+        roll = None
+        if not kwargs:
+            # If there's a previously open roll builder session, close it out
+            key = self._generate_request_key(user, channel)
+            if key in self.roll_cache_by_request:
+                await self.roll_cache_by_request[key].cancel()
+            
+            # make a new builder session, and add it to the caches
+            roll = InteractiveRoller(self, user, channel)
+            await roll.initialize()
+            await self.cache_roll(roll)
+        else:
+            roll = BasicRoller(self, user, channel, **kwargs)
+            await roll.initialize()
+        
+        await roll.next()
+
+
+    async def handle_event(self, user, reaction):
+        # If not a "roll" message, bail
+        if reaction.message.id not in self.roll_cache_by_message:
+            return
+        
+        # If the reaction is from the owner, and a valid option, interpet it. Otherwise, purge.
+        roll = self.roll_cache_by_message[reaction.message.id]
+        if roll.owner.id == user.id and reaction.count > 1:
+            await roll.next(reaction=reaction)
+        else:
+            await reaction.remove(user)
+
+
+class Roller(ABC):
+    def __init__(self, manager, owner, channel):
+        self.manager = manager
         self.owner = owner
-        self.message = message
+        self.channel = channel
+        self.pool = DicePool()
+        self.lock = asyncio.Lock()
+
+
+    async def initialize(self):
+        self.message = await self.channel.send(f'{self.owner.mention}\'s roll: Initializing...')
+
+
+    @abstractmethod
+    async def next(self):
+        pass
+
+
+
+class BasicRoller(Roller):
+    def __init__(self, manager, owner, channel, num_dice, obstacle=None, reason=None):
+        super().__init__(manager, owner, channel)
+        self.num_dice = num_dice
+        self.obstacle = obstacle
+        self.reason = reason
+
+
+    async def next(self):
+        if self.num_dice < 1 or self.num_dice > MAXIMUM_NUMBER_OF_DICE:
+            return await self.message.edit(content=f"🔴 - I'm afraid I can't do that, {self.owner.mention}.")
+
+        self.pool.add_dice(self.num_dice)
+        self.pool.roll()
+
+        reason_portion = ''
+        if self.reason:
+            reason_portion = ' **for ' + self.reason + '**'          
+        obstacle_portion = ''
+        if self.obstacle:
+            successful = self.pool.num_successes() >= self.obstacle
+            obstacle_portion = f"**(Ob {self.obstacle})**  {'🎉' if successful else '💀'}"
+        msg = f'''{self.owner.mention} rolls **{self.num_dice}** {'dice' if self.num_dice > 1 else 'die'}{reason_portion}!
+>>> {to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!        {obstacle_portion}'''
+        await self.message.edit(content=msg)
+
+
+
+class InteractiveRoller(Roller):
+    def __init__(self, manager, owner, channel):
+        super().__init__(manager, owner, channel)
+        
+        # Enter state hell.
         self.has_skill = None
         self.is_mousy = None
         self.using_skill = None
@@ -64,12 +156,10 @@ class RollBuilder():
         self.is_wise = None
         self.tooltip = None
         self.tooltip_enabled = False
-        self.pool = dicepool.DicePool()
-        self.result = []
         self.setting_options = True
-        self.lock = asyncio.Lock()
 
         # These are the linear steps to building a roll. As each gets executed, they'll get popped off the list.
+        # This will have to change if I want to implement "undo" functionality, but that's a can of worms.
         self.steps = [
             self._ask_has_skill, 
             self._ask_skill_level, 
@@ -176,7 +266,7 @@ class RollBuilder():
     async def cancel(self):
         await self.message.edit(content=f'{self.owner.mention} cancelled their roll.')
         await self.message.clear_reactions()
-        unregister(self)
+        await self.manager.uncache_roll(self)
 
     async def finish(self):
         end_index = self.message.content.find('\n>>> **Nudge the result?')
@@ -184,7 +274,7 @@ class RollBuilder():
             msg = self.message.content[:end_index]
             await self.message.edit(content=msg)
         await self.message.clear_reactions()
-        unregister(self)
+        await self.manager.uncache_roll(self)
 
 
     async def new_options(self, *args):
@@ -192,6 +282,8 @@ class RollBuilder():
         await self.message.clear_reactions()
         for emoji in args:
             await self.message.add_reaction(emoji)
+        if self.tooltip:
+            await self.message.add_reaction('ℹ️')
         await self.message.add_reaction('❌')
         self.setting_options = False
 
@@ -207,8 +299,6 @@ class RollBuilder():
         self.tooltip = 'For physical tests, this is health. Otherwise, this is wisdom.' if not self.has_skill else None
         await self.message.edit(content=self._render_message(prompt, show_details=False))
         options = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
-        if not self.has_skill:
-            options += ['ℹ️']
         await self.new_options(*options)
 
 
@@ -216,7 +306,7 @@ class RollBuilder():
         self.skill_level = NUM_MAP[reaction.emoji]
         self.tooltip = 'Escaping, climbing, hiding, and foraging are all "mousy" things.'
         await self.message.edit(content=self._render_message('Is the skill of a mousy nature?', show_details=False))
-        await self.new_options('👍', '👎', 'ℹ️')
+        await self.new_options('👍', '👎')
 
 
     async def _ask_nature_level(self, reaction):
@@ -255,9 +345,7 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
         portions = {'🎯': skill_help, '🍀': luck_help, '🐭': nature_help}
         includes = [portions[option] for option in options]
         spacer = '\n\n'
-
-        options += ['ℹ️']
-        self.tooltip = f'''This is the big decision!\n\n{spacer.join(includes)}'''
+        self.tooltip = f'''This is the big decision!{spacer}{spacer.join(includes)}'''
 
         await self.message.edit(content=self._render_message(msg, show_details=False))
         await self.new_options(*options)
@@ -269,7 +357,7 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
         self.using_luck = reaction.emoji == '🍀'
         self.tooltip = 'Gear is a loose term for any tool or equipment that may help you. Lobby your GM!'
         await self.message.edit(content=self._render_message('Do you have appropriate gear (+1 🎲)?'))
-        await self.new_options('👍', '👎', 'ℹ️')
+        await self.new_options('👍', '👎')
 
 
     async def _ask_num_helpers(self, reaction):
@@ -277,7 +365,7 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
         self.tooltip = '''Any other player may assist (except in some cases) your test with a relevant skill. Doing so, however, will also \
 potentially rope them into the consequences of failure. A mouse may offer assistance risk-free if they have a relevant wise, too.'''
         await self.message.edit(content=self._render_message('How many helpers do you have? (+1 🎲 each)'))
-        await self.new_options('0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', 'ℹ️')
+        await self.new_options('0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣')
 
 
     async def _ask_nature_boost(self, reaction):
@@ -286,7 +374,7 @@ potentially rope them into the consequences of failure. A mouse may offer assist
 nature, doing this will immediately tax your nature by 1. In return, you get to add a number of dice to your pool equal to your nature skill. \
 But beware! Failing the roll will further tax your nature by the margin of failure!'''
         await self.message.edit(content=self._render_message(f'Tap nature for a boost (-1 🎭 , -1 ⚖️ , +{self.nature_level} 🎲)?'))
-        await self.new_options('👍', '👎', 'ℹ️')
+        await self.new_options('👍', '👎')
 
 
     async def _ask_persona_bonus(self, reaction):
@@ -315,7 +403,7 @@ But beware! Failing the roll will further tax your nature by the margin of failu
         self.tooltip = '''Checks ☑️ are really important, and are effectively your "action economy" during the open-ended player turn. If you\'re 
 likely to make the test handily, or fail no matter what, consider hampering your own roll this way for some easy checks!'''
         await self.message.edit(content=self._render_message('Would you like that trait to help you (+1 🎲), or hamper you (-1 🎲 , +1 ☑️)?'))
-        await self.new_options('😊', '😐', '😩', 'ℹ️')
+        await self.new_options('😊', '😐', '😩')
 
 
     async def _confirm_roll(self, reaction):
@@ -342,7 +430,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
 
         self.tooltip = 'Lobby your GM for a wise\'s relevance!'
         await self.message.edit(content=msg)
-        await self.new_options('👍', '👎', 'ℹ️')
+        await self.new_options('👍', '👎')
 
 
     async def _nudge_roll_until_done(self, reaction):
@@ -379,7 +467,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
             msg += '\n  🔮 - Re-roll one snake! (-1 fate)'
             msg += '\n  🎭 - Re-roll all snakes! (-1 persona)'
             options += ['🔮', '🎭']
-        options += ['🔎', 'ℹ️']
+        options += ['🔎']
         msg += '**'
 
         self.tooltip = '''Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any \

@@ -10,7 +10,7 @@ import discord
 
 from sheets import load_sheets, check_valid_skill
 
-import rollbuild
+from rolling import RollerManager
 from util import to_emoji_str
 
 
@@ -34,9 +34,8 @@ GOOGLE_SHEETS_URL = config['google_sheets_url']
 
 # Meh, I'll just use regexes to parse commands. Easy enough.
 ROLL_BUILD_REGEX = re.compile(r'^\!roll$')
-ROLL_REGEX = re.compile(r'\!roll (\d{1,2})(?:\s?[Oo][Bb]\s?(\d))?(?:(?: for )?(.+))?')
+ROLL_REGEX = re.compile(r'\!roll (\d+)(?:\s?[Oo][Bb]\s?(\d))?(?: for ?(.+))?')
 RATING_REGEX = re.compile(r'\!(rating|progress)(?: (.+))? (.+)')
-FORCE_REGEX = re.compile(r'\!force ((?:\d+,?\s*)*\d+)')
 
 USER_ID_REGEX = re.compile(r'<@!(\d+)>')
 
@@ -82,12 +81,6 @@ else:
     }
 
 
-# 30 max is beyond reasonable, and is spammy enough
-# https://forums.burningwheel.com/t/maximum-of-dice/8561/6
-MAXIMUM_NUMBER_OF_DICE = 30
-
-
-
 class ValueRetainingRegexMatcher:
     '''This is a load of BS to just get around not using PEP 572'''
     def __init__(self, match_str):
@@ -101,60 +94,63 @@ class ValueRetainingRegexMatcher:
         return self.retained.group(i)
 
 
+
 class MiceDice(discord.Client):
     '''The MiceDice discort bot client.
 
-    This is basically a hack, but I wrote this quickly in a night, sue me.
-    '''
+    This is basically a hack, but I've put a few hours into this code by now
+    so I can't use the "I did it in a night" excuse as a crutch anymore.'''
 
     def __init__(self):
-        '''Load the saved roll results from the server-backed file json file.'''
         super().__init__()
-        self.forced_values = []
 
         print("Initializing MiceDice...")
+        self.roller = RollerManager()
         self.sheets = {}
 
 
     async def on_ready(self):
-        potential_players = [_.id for _ in self.get_guild(SERVER_ID).members]
-        self.sheets = load_sheets(GOOGLE_CREDS_JSON, GOOGLE_SHEETS_URL, potential_players) if USE_SHEETS else {}
+        self.sheets = {}
+        if USE_SHEETS:
+            self.sheets = load_sheets(GOOGLE_CREDS_JSON, GOOGLE_SHEETS_URL, [_.id for _ in self.get_guild(SERVER_ID).members])
         print('MiceDice bot ready to play!')
 
 
     async def on_message(self, message):
-        # Bot ignores itself. This is how you avoid learning.
+        # Bot ignores itself. This is how you avoid the singularity.
         if message.author == self.user:
             return
 
-        if message.content.startswith('!'):
-            if message.content in ALIASES:
-                message.content = ALIASES[message.content]
+        # Ignore anything that doesn't start with the magic token
+        if not message.content.startswith('!'):
+            return
 
-            m = ValueRetainingRegexMatcher(message.content)
-            if m.match(ROLL_BUILD_REGEX):
-                await rollbuild.start_roll(message.author, message.channel)
-            elif m.match(ROLL_REGEX):
-                num_dice = m.group(1)
-                obstacle = m.group(2)
-                reason = m.group(3)
-                await self.roll(message, num_dice, obstacle, reason)
-            elif m.match(FORCE_REGEX):
-                values = m.group(1)
-                await self.force(message, values)
-            elif m.match(RATING_REGEX) and USE_SHEETS:
-                progress = m.group(1) == 'progress'
-                who = m.group(2)
-                if who: 
-                    uid_matcher = ValueRetainingRegexMatcher(who)
-                    if uid_matcher.match(USER_ID_REGEX):
-                        user = discord.utils.get(message.guild.members, id=int(uid_matcher.group(1)))
-                        who = user.display_name if user else discord.utils.escape_mentions(who)
-                skill = m.group(3)
-                await self.check_rating(message, who, skill, progress)
-            elif m.match(USAGE_REGEX):
-                await self.usage(message)
-            # else is a quiet no-op
+        # Handle alises
+        if message.content in ALIASES:
+            message.content = ALIASES[message.content]
+
+        # Match against the right command, grab args, and go
+        m = ValueRetainingRegexMatcher(message.content)
+        
+        if m.match(ROLL_BUILD_REGEX):
+            await self.roller.create(message.author, message.channel)
+        elif m.match(ROLL_REGEX):
+            num_dice = int(m.group(1)) if m.group(1) else None
+            obstacle = int(m.group(2)) if m.group(2) else None
+            reason = m.group(3)
+            await self.roller.create(message.author, message.channel, num_dice=num_dice, obstacle=obstacle, reason=reason)
+        elif m.match(RATING_REGEX) and USE_SHEETS:
+            progress = m.group(1) == 'progress'
+            who = m.group(2)
+            if who: 
+                uid_matcher = ValueRetainingRegexMatcher(who)
+                if uid_matcher.match(USER_ID_REGEX):
+                    user = discord.utils.get(message.guild.members, id=int(uid_matcher.group(1)))
+                    who = user.display_name if user else discord.utils.escape_mentions(who)
+            skill = m.group(3)
+            await self.check_rating(message, who, skill, progress)
+        elif m.match(USAGE_REGEX):
+            await self.usage(message)
 
 
     async def on_reaction_add(self, reaction, user):
@@ -163,11 +159,8 @@ class MiceDice(discord.Client):
             return
         
         # If the reaction was to a "roll build" comment, and the reactor is the owner of it...
-        if reaction.message.author.id == self.user.id and await rollbuild.is_roll(reaction.message):
-            if await rollbuild.owns_roll(user, reaction.message) and reaction.count > 1:
-                await rollbuild.next(reaction)
-            else:
-                await reaction.remove(user)
+        if reaction.message.author.id == self.user.id:
+            await self.roller.handle_event(user, reaction)
 
 
     async def _render_rating(self, player, skill, progress):
@@ -224,49 +217,6 @@ class MiceDice(discord.Client):
         await message.channel.send(msg)
 
 
-    async def force(self, message, values):
-        if not GM_ROLE in [_.name for _ in message.author.roles]:
-            return
-        self.forced_values = [int(_) for _ in values.replace(',', ' ').split()]
-        await message.channel.send('Forcing values: ' + str(self.forced_values))
-
-
-    async def roll(self, message, num_dice, obstacle, reason):
-        '''!roll <#> [Ob #] [for <reason>]'''
-        try:
-            num_dice = int(num_dice)
-        except:
-            await message.channel.send("Rolls must be with made with a valid number of dice!")
-            return
-
-        if obstacle:
-            try:
-                obstacle = int(obstacle)
-            except:
-                await message.channel.send("Roll obstacles must have a valid difficulty!")
-                return
-
-        if num_dice < 1 or num_dice > MAXIMUM_NUMBER_OF_DICE:
-            await message.channel.send("Rolls must be with an *appropriate* number of dice!")
-            return
-
-        # roll dice
-        result = sorted([random.randint(1, 6) for i in range(num_dice)])
-
-        # used forced values, potentially
-        if self.forced_values and GM_ROLE in [_.name for _ in message.author.roles]:
-            result = self.forced_values + result
-            result = result[:num_dice]
-            result = sorted(result)
-            self.forced_values = []
-        
-        roll_str = f"**{message.author.mention}** is rolling **{num_dice}** dice"
-        reason_str = f'**for {reason}**' if reason else ''
-        dice_result_str = await self.resolve_dice_result_str(result, obstacle=obstacle)
-        
-        await message.channel.send(f'{roll_str} {reason_str}\n>>> {dice_result_str}')
-
-
     async def usage(self, message):
         '''!help'''
         await message.channel.send(
@@ -275,17 +225,6 @@ class MiceDice(discord.Client):
                 f'\t!roll <dice> [Ob <req>] [for <reason>]\n'
                 f'```'
         )
-
-
-    async def resolve_dice_result_str(self, result, obstacle=None, tagged=None):
-        result_str = to_emoji_str(result)
-        success_str = ''
-        if obstacle:
-            success = len([_ for _ in result if _ >= 4]) >= obstacle
-            emoji = ':tada:' if success else ':skull:'
-            success_str = f'\t[**(Ob {obstacle}) {emoji}**]'
-
-        return f"{result_str} {success_str}"
 
 
 def main():

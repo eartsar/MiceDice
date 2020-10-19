@@ -1,4 +1,3 @@
-from decimal import Decimal, ROUND_HALF_UP
 import random
 
 
@@ -36,8 +35,6 @@ class Die():
     def explode(self):
         if self.can_explode():
             self.roll()
-
-
 
 
 

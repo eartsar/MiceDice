@@ -163,8 +163,11 @@ class MiceDice(discord.Client):
             return
         
         # If the reaction was to a "roll build" comment, and the reactor is the owner of it...
-        if reaction.message.author.id == self.user.id and await rollbuild.is_roll(reaction.message) and await rollbuild.owns_roll(user, reaction.message):
-            await rollbuild.next(reaction)
+        if reaction.message.author.id == self.user.id and await rollbuild.is_roll(reaction.message):
+            if await rollbuild.owns_roll(user, reaction.message) and reaction.count > 1:
+                await rollbuild.next(reaction)
+            else:
+                await reaction.remove(user)
 
 
     async def _render_rating(self, player, skill, progress):

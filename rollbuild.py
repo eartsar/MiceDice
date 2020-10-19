@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+import asyncio
 import random
 import dicepool
 from util import to_emoji_str
@@ -61,8 +62,12 @@ class RollBuilder():
         self.trait = 0
         self.with_tax = None
         self.is_wise = None
+        self.tooltip = None
+        self.tooltip_enabled = False
         self.pool = dicepool.DicePool()
         self.result = []
+        self.setting_options = True
+        self.lock = asyncio.Lock()
 
         # These are the linear steps to building a roll. As each gets executed, they'll get popped off the list.
         self.steps = [
@@ -83,7 +88,7 @@ class RollBuilder():
         ]
 
 
-    def _render_message(self, prompt, help_text=None, show_details=True):
+    def _render_message(self, prompt, show_details=True):
         msg = f'{self.owner.mention} is rolling dice...'
 
         if show_details:
@@ -124,9 +129,6 @@ class RollBuilder():
 
         if prompt:
             msg += f'\n>>> **{prompt}**'
-
-        if help_text:
-            msg += f'\n\n*{help_text}*\n'
 
         return msg
 
@@ -186,10 +188,12 @@ class RollBuilder():
 
 
     async def new_options(self, *args):
+        self.setting_options = True
         await self.message.clear_reactions()
         for emoji in args:
             await self.message.add_reaction(emoji)
         await self.message.add_reaction('❌')
+        self.setting_options = False
 
 
     async def _ask_has_skill(self, reaction):
@@ -200,16 +204,19 @@ class RollBuilder():
     async def _ask_skill_level(self, reaction):
         self.has_skill = reaction.emoji == '👍'
         prompt = 'What is your skill level?' if self.has_skill else 'What is your base attribute level?'
-        help_text = 'For physical tests, this is health. Otherwise, this is wisdom.' if not self.has_skill else None
-        await self.message.edit(content=self._render_message(prompt, help_text=help_text, show_details=False))
-        await self.new_options('1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣')
+        self.tooltip = 'For physical tests, this is health. Otherwise, this is wisdom.' if not self.has_skill else None
+        await self.message.edit(content=self._render_message(prompt, show_details=False))
+        options = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+        if not self.has_skill:
+            options += ['ℹ️']
+        await self.new_options(*options)
 
 
     async def _ask_mousy_nature(self, reaction):
         self.skill_level = NUM_MAP[reaction.emoji]
-        help_text = 'Escaping, climbing, hiding, and foraging are all "mousy" things.'
-        await self.message.edit(content=self._render_message('Is the skill of a mousy nature?', help_text=help_text, show_details=False))
-        await self.new_options('👍', '👎')
+        self.tooltip = 'Escaping, climbing, hiding, and foraging are all "mousy" things.'
+        await self.message.edit(content=self._render_message('Is the skill of a mousy nature?', show_details=False))
+        await self.new_options('👍', '👎', 'ℹ️')
 
 
     async def _ask_nature_level(self, reaction):
@@ -248,9 +255,11 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
         portions = {'🎯': skill_help, '🍀': luck_help, '🐭': nature_help}
         includes = [portions[option] for option in options]
         spacer = '\n\n'
-        help_text = f'''This is the big decision!\n\n{spacer.join(includes)}'''
 
-        await self.message.edit(content=self._render_message(msg, help_text=help_text, show_details=False))
+        options += ['ℹ️']
+        self.tooltip = f'''This is the big decision!\n\n{spacer.join(includes)}'''
+
+        await self.message.edit(content=self._render_message(msg, show_details=False))
         await self.new_options(*options)
 
 
@@ -258,26 +267,26 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
         self.using_skill = reaction.emoji == '🎯' 
         self.using_nature = reaction.emoji == '🐭'
         self.using_luck = reaction.emoji == '🍀'
-        help_text = 'Gear is a loose term for any tool or equipment that may help you. Lobby your GM!'
-        await self.message.edit(content=self._render_message('Do you have appropriate gear (+1 🎲)?', help_text=help_text))
-        await self.new_options('👍', '👎')
+        self.tooltip = 'Gear is a loose term for any tool or equipment that may help you. Lobby your GM!'
+        await self.message.edit(content=self._render_message('Do you have appropriate gear (+1 🎲)?'))
+        await self.new_options('👍', '👎', 'ℹ️')
 
 
     async def _ask_num_helpers(self, reaction):
         self.with_gear = reaction.emoji =='👍'
-        help_text = '''Any other player may assist (except in some cases) your test with a relevant skill. Doing so, however, will also \
+        self.tooltip = '''Any other player may assist (except in some cases) your test with a relevant skill. Doing so, however, will also \
 potentially rope them into the consequences of failure. A mouse may offer assistance risk-free if they have a relevant wise, too.'''
-        await self.message.edit(content=self._render_message('How many helpers do you have? (+1 🎲 each)', help_text=help_text))
-        await self.new_options('0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣')
+        await self.message.edit(content=self._render_message('How many helpers do you have? (+1 🎲 each)'))
+        await self.new_options('0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', 'ℹ️')
 
 
     async def _ask_nature_boost(self, reaction):
         self.helpers = NUM_MAP[reaction.emoji]
-        help_text = '''Tapping nature will give you a big boost for making checks, but at a cost. Unless the test is within your mousy \
+        self.tooltip = '''Tapping nature will give you a big boost for making checks, but at a cost. Unless the test is within your mousy \
 nature, doing this will immediately tax your nature by 1. In return, you get to add a number of dice to your pool equal to your nature skill. \
 But beware! Failing the roll will further tax your nature by the margin of failure!'''
-        await self.message.edit(content=self._render_message(f'Tap nature for a boost (-1 🎭 , -1 ⚖️ , +{self.nature_level} 🎲)?', help_text=help_text))
-        await self.new_options('👍', '👎')
+        await self.message.edit(content=self._render_message(f'Tap nature for a boost (-1 🎭 , -1 ⚖️ , +{self.nature_level} 🎲)?'))
+        await self.new_options('👍', '👎', 'ℹ️')
 
 
     async def _ask_persona_bonus(self, reaction):
@@ -299,12 +308,14 @@ But beware! Failing the roll will further tax your nature by the margin of failu
         if not has_trait:
             self.steps.pop(0)
             reaction.emoji = '😐'
+            self.tooltip = None
+            self.tooltip_enabled = False
             return await self._confirm_roll(reaction)
 
-        help_text = '''Checks ☑️ are really important, and are effectively your "action economy" during the open-ended player turn. If you\'re 
+        self.tooltip = '''Checks ☑️ are really important, and are effectively your "action economy" during the open-ended player turn. If you\'re 
 likely to make the test handily, or fail no matter what, consider hampering your own roll this way for some easy checks!'''
-        await self.message.edit(content=self._render_message('Would you like that trait to help you (+1 🎲), or hamper you (-1 🎲 , +1 ☑️)?', help_text=help_text))
-        await self.new_options('😊', '😐', '😩')
+        await self.message.edit(content=self._render_message('Would you like that trait to help you (+1 🎲), or hamper you (-1 🎲 , +1 ☑️)?'))
+        await self.new_options('😊', '😐', '😩', 'ℹ️')
 
 
     async def _confirm_roll(self, reaction):
@@ -326,6 +337,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
         msg = f'''{self._render_message(None)}
 {self.owner.mention} rolls the dice!
 {to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!
+
 >>> **Are you wise?**
 
 *Lobby your GM for a wise's relevance!*'''
@@ -356,7 +368,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
         if exploded or reroll_one or reroll_all:
             msg += f'\n\n{self.to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!'
         
-        msg += '\n>>> **Nudge the result?'
+        msg += '\n\n>>> **Nudge the result?'
         msg += '\n\n  🏁 - Finish!'
         
         options = ['🏁']
@@ -379,26 +391,40 @@ Re-rolling snakes is only possible if that particular die has not already been r
 
     async def next(self, reaction=None):
         # Cancel button - close out the builder
-        if reaction and reaction.emoji == '❌':
-            await self.cancel()
-            return
+        
+        async with self.lock:
+            if reaction and reaction.emoji == '❌':
+                await self.cancel()
+                return
 
-        # Finish button - Finalize the builder
-        if reaction and reaction.emoji == '🏁':
-            await self.finish()
-            return
+            # Finish button - Finalize the builder
+            if reaction and reaction.emoji == '🏁':
+                await self.finish()
+                return
 
-        # Query button - Audit the roll history with a DM
-        if reaction and reaction.emoji == '❓':
-            msg = f'Transparent roll log for https://discordapp.com/channels/\
+
+            if reaction and reaction.emoji == 'ℹ️':
+                if not self.tooltip_enabled:
+                    self.tooltip_enabled = True
+                    content_with_tooltip = self.message.content + f'\n\nℹ️ *{self.tooltip}*\n'
+                    await self.message.edit(content=content_with_tooltip)
+                return
+
+
+            # Query button - Audit the roll history with a DM
+            if reaction and reaction.emoji == '❓':
+                msg = f'Transparent roll log for https://discordapp.com/channels/\
 {reaction.message.channel.guild.id}/\
 {reaction.message.channel.id}/\
 {reaction.message.id}'
-            msg += "\n```" + "\n".join([str(_) for _ in self.pool.result_history]) + "```"
-            await self.message.channel.send(msg)
-            return
+                msg += "\n```" + "\n".join([str(_) for _ in self.pool.result_history]) + "```"
+                await self.message.channel.send(msg)
+                return
 
-        await self.steps[0](reaction)
-        if len(self.steps) > 1:
-            self.steps.pop(0)
-        
+            self.tooltip = None
+            self.tooltip_enabled = False
+            await self.steps[0](reaction)
+            
+            if len(self.steps) > 1:
+                self.steps.pop(0)
+

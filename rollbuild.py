@@ -177,7 +177,7 @@ class RollBuilder():
         unregister(self)
 
     async def finish(self):
-        end_index = self.message.content.find('\n>>> Nudge the result?')
+        end_index = self.message.content.find('\n>>> **Nudge the result?')
         if end_index:
             msg = self.message.content[:end_index]
             await self.message.edit(content=msg)
@@ -220,7 +220,7 @@ class RollBuilder():
 
     async def _ask_roll_strategy(self, reaction):
         self.nature_level = NUM_MAP[reaction.emoji]
-        msg = 'How would you like to roll?'
+        msg = 'How would you like to roll?\n'
 
         options = []
         if self.has_skill:
@@ -237,18 +237,18 @@ class RollBuilder():
             msg += f'\n  🐭 - Act against your mousy nature (+{self.nature_level} 🎲)'
             options += ['🐭']
 
-        skill_help = 'If you have the specified skill, using it will count towards training your skill\'s success and failure progress.\n\n'
+        skill_help = 'If you have the specified skill, using it will count towards training your skill\'s success and failure progress.'
         luck_help = '''If you lack the skill, you can use "beginner\'s luck", which uses your base attribute in place of the required skill, \
 at the cost of halving your dice pool (⚠️ excluding nature tapping, and persona dice). Choosing "beginner\'s luck" \
-allows you to make progress towards learning the skill properly for future use.\n\n'''
+allows you to make progress towards learning the skill properly for future use.'''
         nature_help = '''It is also possible to use nature, instead, in some cases. Acting within your mousy nature will let you use \
 your nature skill in place of the required skill, with no penalty. If you don't have the skill, you can act against your nature. \
 This will let you use your nature skill instead of beginner's luck, but at a cost (tax), and does not train the skill. Use this wisely!'''
         
-        help_text = f'''This is the big decision!\n\n\
-{skill_help if '🎯' in options else ''}\
-{luck_help if '🍀' in options else ''}\
-{nature_help if '🐭' in options else ''}'''
+        portions = {'🎯': skill_help, '🍀': luck_help, '🐭': nature_help}
+        includes = [portions[option] for option in options]
+        spacer = '\n\n'
+        help_text = f'''This is the big decision!\n\n{spacer.join(includes)}'''
 
         await self.message.edit(content=self._render_message(msg, help_text=help_text, show_details=False))
         await self.new_options(*options)
@@ -357,7 +357,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
             msg += f'\n\n{self.to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!'
         
         msg += '\n>>> **Nudge the result?'
-        msg += '\n  🏁 - Finish!'
+        msg += '\n\n  🏁 - Finish!'
         
         options = ['🏁']
         if self.pool.can_explode():
@@ -370,7 +370,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
         options += ['❓']
         msg += '''**
 
-*Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any time is eligible to be exploded.
+*Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any time is eligible to be exploded. \
 Re-rolling snakes is only possible if that particular die has not already been re-rolled, though.*'''
         
         await self.message.edit(content=msg)

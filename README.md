@@ -16,11 +16,11 @@ Yeah...
 `python3 micedice.py --config /path/to/config.yml`
 
 ## I want to use it.
-    !help							list commands
-    !roll 							initiate the roll builder
-    !roll 4   						quick roll dice
-    !roll 3 for nature 				quick roll dice with reason commentary
-    !roll 6 ob 3 for insectrist		quick roll dice against an obstacle with commentary
+    !help                           list commands
+    !roll                           initiate the roll builder
+    !roll 4                         quick roll dice
+    !roll 3 for nature              quick roll dice with reason commentary
+    !roll 6 ob 3 for insectrist     quick roll dice against an obstacle with commentary
 
 ## TODOs
 * More sheets integration
@@ -37,7 +37,7 @@ Setting up a Google Application... Application
 - Create a project here: https://console.developers.google.com/
 - Add/Enable the Google Sheets & Google Drive APIs here: https://console.developers.google.com/apis/
 - Create OAUTH2 credentials here: https://console.developers.google.com/apis/credentials
-	- Make sure you create credentials for a SERVICE ACCOUNT associated with the app.
+    - Make sure you create credentials for a SERVICE ACCOUNT associated with the app.
 - Download the credentials JSON file. This is referenced in the MiceDice configuration.
 - Copy the [template sheet](https://docs.google.com/spreadsheets/d/1Ehj1Kc933fx8MCDSob_gUi1sJPIKDA0Yq-TAsKV7gQk/)
 - Share the sheet with the service acount email address.

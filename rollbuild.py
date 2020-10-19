@@ -338,11 +338,11 @@ likely to make the test handily, or fail no matter what, consider hampering your
 {self.owner.mention} rolls the dice!
 {to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!
 
->>> **Are you wise?**
+>>> **Are you wise?**'''
 
-*Lobby your GM for a wise's relevance!*'''
+        self.tooltip = 'Lobby your GM for a wise\'s relevance!'
         await self.message.edit(content=msg)
-        await self.new_options('👍', '👎')
+        await self.new_options('👍', '👎', 'ℹ️')
 
 
     async def _nudge_roll_until_done(self, reaction):
@@ -379,11 +379,11 @@ likely to make the test handily, or fail no matter what, consider hampering your
             msg += '\n  🔮 - Re-roll one snake! (-1 fate)'
             msg += '\n  🎭 - Re-roll all snakes! (-1 persona)'
             options += ['🔮', '🎭']
-        options += ['❓']
-        msg += '''**
+        options += ['🔎', 'ℹ️']
+        msg += '**'
 
-*Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any time is eligible to be exploded. \
-Re-rolling snakes is only possible if that particular die has not already been re-rolled, though.*'''
+        self.tooltip = '''Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any \
+time is eligible to be exploded. Re-rolling snakes is only possible if that particular die has not already been re-rolled, though.'''
         
         await self.message.edit(content=msg)
         await self.new_options(*options)
@@ -412,7 +412,7 @@ Re-rolling snakes is only possible if that particular die has not already been r
 
 
             # Query button - Audit the roll history with a DM
-            if reaction and reaction.emoji == '❓':
+            if reaction and reaction.emoji == '🔎':
                 msg = f'Transparent roll log for https://discordapp.com/channels/\
 {reaction.message.channel.guild.id}/\
 {reaction.message.channel.id}/\

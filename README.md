@@ -1,7 +1,7 @@
 ## What is this?
 It's a discord bot that I hacked together very quickly to fit my needs as a dice bot while running Mouse Guard RPG campaigns. I wanted a bot that had no fluff, could render results using emojis (for snakes, swords, and axes), and could do roll flow/math to make the game more approachable for online play.
 
-This project is an untested hack. Use at your own risk. If you're reading this, I'm sorry. Fork it and make it good so I can close this repo and just use yours instead.
+This project is an untested hack. Use at your own risk. Fork it and make it good so I can close this repo and just use yours instead.
 
 
 ## Oh god. I know the author of this code. Dear lord, what's broken?

@@ -1,7 +1,7 @@
 def dice_result_to_emoji_str(result):
-    from micedice import DICE_FACE_EMOJI
+    from micedice import DICE_FACE_EMOJIS
     '''Converts a list of d6 numbers to emojis, then joins by spaces.'''
-    return " ".join([DICE_FACE_EMOJI[_] for _ in result])
+    return " ".join([DICE_FACE_EMOJIS[_] for _ in result])
 
 
 def explosion_diff_to_emoji_str(changes, operation):

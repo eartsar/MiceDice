@@ -456,7 +456,6 @@ likely to make the test handily, or fail no matter what, consider hampering your
             msg += '\n  🔮 - Re-roll one snake! (-1 fate)'
             msg += f'\n  🎭 - Re-roll all ({self.pool.num_can_reroll()}) snakes! (-1 persona)'
             options += ['🔮', '🎭']
-        options += ['🔎']
         msg += '**'
 
         self.tooltip = '''Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any \

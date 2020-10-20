@@ -24,7 +24,6 @@ with open(args.config, 'r') as f:
 
 BOT_TOKEN = config['bot_token']
 SERVER_ID = config['server_id']
-GM_ROLE = config['gm_role']
 
 # Experimental Google Sheets integration
 GOOGLE_CREDS_JSON = config['google_service_account_creds']
@@ -44,7 +43,7 @@ USAGE_REGEX = re.compile(r'\!(:?help|usage|roll|rating|progress)')
 # Aliases for commands. Shortcuts. Alternates.
 ALIASES = {}
 
-USE_EMOJIS = True
+USE_ICON_EMOJIS = config['use_icon_emojis']
 USE_SHEETS = config['use_google_sheets']
 
 # Translates a d6 --> MG d6
@@ -53,9 +52,9 @@ SNAKE_EMOJI = '🐍'
 SWORDS_EMOJI = '⚔️'
 AXE_EMOJI = '🪓'
 
-DICE_FACE_EMOJI = {}
-if USE_EMOJIS:
-    DICE_FACE_EMOJI = {
+DICE_FACE_EMOJIS = {}
+if USE_ICON_EMOJIS:
+    DICE_FACE_EMOJIS = {
         0: '❓',
         1: SNAKE_EMOJI,
         2: SNAKE_EMOJI,
@@ -65,7 +64,7 @@ if USE_EMOJIS:
         6: AXE_EMOJI
     }
 else:
-    DICE_FACE_EMOJI = {
+    DICE_FACE_EMOJIS = {
         0: '0️⃣',
         1: '1️⃣',
         2: '2️⃣',

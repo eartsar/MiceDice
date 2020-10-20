@@ -7,20 +7,8 @@ bot_token: <secret_bot_token>
 # Your discord server ID
 server_id: <discord_server_id>
 
-# GM role. This is for output tweaks.
-gm_role: GM
-
-
-# =========CUSTOM EMOJIS (OPTIONAL)=========
-# Set to true if you want to use custom emojis for things
-use_custom_emojis: false
-
-# These are the emojis to use for display purposes.
-# This requires the ID for custom emojis, NOT the text.
-# You can find out the id to use by escaping the emoji in discord.
-snake_emoji: <snake_emoji_id>
-swords_emoji: <sword_emoji_id>
-axe_emoji: <axe_emoji_id>
+# Set to true if you want to use snake, sword, axe emojis, rather than number emojis
+use_icon_emojis: true
 
 
 # =========GOOGLE SHEETS (OPTIONAL)=========

@@ -141,15 +141,15 @@ class GoogleBackedSheet():
         return val
 
 
-    async def _render_rating(self, player, skill, progress):
-        sheet = self.sheets[player.id]
+    async def _render_rating(self, user, skill, progress):
+        sheet = self.sheets[user.id]
         await sheet.sync()
         rating = sheet.get_rating(skill)
 
         if not rating:
-            return f'{player.display_name}\'s {skill} rating: **Not yet learning!**'
+            return f'{user.display_name}\'s {skill} rating: **Not yet learning!**'
         
-        msg = f'{player.display_name}\'s {skill} rating: **{"Learning!" if rating == "x" else rating}**'
+        msg = f'{user.display_name}\'s {skill} rating: **{"Learning!" if rating == "x" else rating}**'
         if progress:
             success = sheet.get_success(skill)
             fail = sheet.get_fail(skill)
@@ -161,10 +161,10 @@ class GoogleBackedSheet():
         return msg
 
 
-    async def check_rating(self, channel, skill, progress=False):
+    async def check_rating(self, skill, channel, user, progress=False):
         if not check_valid_skill(skill):
             return await channel.send(f'{skill} is not a valid skill.')
         
-        msg = await self._render_rating(who, skill, progress)
+        msg = await self._render_rating(user, skill, progress)
         await message.channel.send(msg)
 

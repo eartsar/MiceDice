@@ -10,7 +10,6 @@ import discord
 
 from sheets import SheetManager
 from rolling import RollerManager
-from util import to_emoji_str
 
 
 parser = argparse.ArgumentParser(description='Run the MiceDice bot.')
@@ -45,22 +44,19 @@ USAGE_REGEX = re.compile(r'\!(:?help|usage|roll|rating|progress)')
 # Aliases for commands. Shortcuts. Alternates.
 ALIASES = {}
 
-USE_CUSTOM_EMOJIS = config['use_custom_emojis']
+USE_EMOJIS = True
 USE_SHEETS = config['use_google_sheets']
 
 # Translates a d6 --> MG d6
 # Default the emojis to just words for display purposes
-SNAKE_EMOJI = 'snakes'
-SWORDS_EMOJI = 'swords'
-AXE_EMOJI = 'axes'
+SNAKE_EMOJI = '🐍'
+SWORDS_EMOJI = '⚔️'
+AXE_EMOJI = '🪓'
 
-EMOJI_MAP = {}
-if USE_CUSTOM_EMOJIS:
-    SNAKE_EMOJI = config['snake_emoji']
-    SWORDS_EMOJI = config['swords_emoji']
-    AXE_EMOJI = config['axe_emoji']
-    EMOJI_MAP = {
-        0: ':empty:',
+DICE_FACE_EMOJI = {}
+if USE_EMOJIS:
+    DICE_FACE_EMOJI = {
+        0: '❓',
         1: SNAKE_EMOJI,
         2: SNAKE_EMOJI,
         3: SNAKE_EMOJI,
@@ -69,14 +65,14 @@ if USE_CUSTOM_EMOJIS:
         6: AXE_EMOJI
     }
 else:
-    EMOJI_MAP = {
-        0: ':empty:',
-        1: ':one:',
-        2: ':two:',
-        3: ':three:',
-        4: ':four:',
-        5: ':five:',
-        6: ':six:'
+    DICE_FACE_EMOJI = {
+        0: '0️⃣',
+        1: '1️⃣',
+        2: '2️⃣',
+        3: '3️⃣',
+        4: '4️⃣',
+        5: '5️⃣',
+        6: '6️⃣'
     }
 
 
@@ -141,13 +137,13 @@ class MiceDice(discord.Client):
             progress = m.group(1) == 'progress'
             skill = m.group(2)
             sheet = await self.sheets.get_sheet(message.author)
-            await sheet.check_rating(message, who, skill, progress)
+            await sheet.check_rating(skill, message.channel, message.author, progress=progress)
         elif m.match(USAGE_REGEX):
             await self.usage(message)
 
 
     async def on_reaction_add(self, reaction, user):
-        # If the reaction was from this bot, ignore it
+        # If the reaction was from this bot, ignore i
         if user == self.user:
             return
         

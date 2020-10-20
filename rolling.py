@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from abc import ABC, abstractmethod
 
 from dice import DicePool
-from util import to_emoji_str
+from util import render_dice_pool
 
 
 # mapping of emoji to numeric value
@@ -127,10 +127,11 @@ class BasicRoller(Roller):
             reason_portion = ' **for ' + self.reason + '**'          
         obstacle_portion = ''
         if self.obstacle:
-            successful = self.pool.num_successes() >= self.obstacle
-            obstacle_portion = f"**(Ob {self.obstacle})**  {'🎉' if successful else '💀'}"
-        msg = f'''{self.owner.mention} rolls **{self.num_dice}** {'dice' if self.num_dice > 1 else 'die'}{reason_portion}!
->>> {to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!        {obstacle_portion}'''
+            successful = self.pool.value() >= self.obstacle
+            obstacle_portion = f"{' '*8}**(Ob {self.obstacle})**  {'🎉' if successful else '💀'}"
+        quantity_portion = f"**{self.num_dice}** {'dice' if self.num_dice > 1 else 'die'}"
+        result_portion = f"{render_dice_pool(self.pool)}"
+        msg = f'{self.owner.mention} rolls {quantity_portion}{reason_portion}!\n>>> {result_portion}{obstacle_portion}'
         await self.message.edit(content=msg)
 
 
@@ -255,12 +256,6 @@ class InteractiveRoller(Roller):
             total -= 1
 
         return total
-
-
-    def to_emoji_str(self, result):
-        from micedice import EMOJI_MAP
-        '''Converts a list of d6 numbers to emojis, then joins by spaces.'''
-        return " ".join([EMOJI_MAP[_] for _ in result])
 
 
     async def cancel(self):
@@ -422,11 +417,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
         self.pool.add_dice(self._crunch(consider_luck=True))
         self.pool.roll()
 
-        msg = f'''{self._render_message(None)}
-{self.owner.mention} rolls the dice!
-{to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!
-
->>> **Are you wise?**'''
+        msg = f'''{self._render_message(None)}\n{self.owner.mention} rolls the dice!\n{render_dice_pool(self.pool)}\n\n>>> **Are you wise?**'''
 
         self.tooltip = 'Lobby your GM for a wise\'s relevance!'
         await self.message.edit(content=msg)
@@ -441,7 +432,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
         reroll_all = reaction.emoji == '🎭'
         
         msg = self._render_message(None)
-        msg += f'\n{self.owner.mention} rolls the dice!\n{to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!'
+        msg += f'\n{self.owner.mention} rolls the dice!'
 
         if exploded:
             msg += f'\n\n{self.owner.mention} rolls a new die for each axe ({self.pool.num_can_explode()})!'
@@ -453,9 +444,7 @@ likely to make the test handily, or fail no matter what, consider hampering your
             msg += f'\n\n{self.owner.mention} re-rolls all snakes ({self.pool.num_can_reroll()})!'
             self.pool.reroll_all()
         
-        if exploded or reroll_one or reroll_all:
-            msg += f'\n\n{self.to_emoji_str(self.pool.current_result())}    ➡️    **{self.pool.num_successes()}**!'
-        
+        msg += f'\n\n{render_dice_pool(self.pool, with_history=True)}'
         msg += '\n\n>>> **Nudge the result?'
         msg += '\n\n  🏁 - Finish!'
         
@@ -463,9 +452,9 @@ likely to make the test handily, or fail no matter what, consider hampering your
         if self.pool.can_explode():
             msg += f'\n  💥 - Re-roll all ({self.pool.num_can_explode()}) axes (-1 fate)!'
             options += ['💥']
-        if self.is_wise and self.pool.num_can_reroll():
+        if self.is_wise and self.pool.can_reroll():
             msg += '\n  🔮 - Re-roll one snake! (-1 fate)'
-            msg += '\n  🎭 - Re-roll all snakes! (-1 persona)'
+            msg += f'\n  🎭 - Re-roll all ({self.pool.num_can_reroll()}) snakes! (-1 persona)'
             options += ['🔮', '🎭']
         options += ['🔎']
         msg += '**'
@@ -478,19 +467,21 @@ time is eligible to be exploded. Re-rolling snakes is only possible if that part
 
 
     async def next(self, reaction=None):
-        # Cancel button - close out the builder
-        
+        # Lock prevents responses from interrupting previous runs while finishing
+        # work, like loading emoji options for a particular question.
         async with self.lock:
+            # Assess the response to the previous prompt.
+            # Cancel button - close out the builder.
             if reaction and reaction.emoji == '❌':
                 await self.cancel()
                 return
 
-            # Finish button - Finalize the builder
+            # Finish button - Finalize the builder.
             if reaction and reaction.emoji == '🏁':
                 await self.finish()
                 return
 
-
+            # Tooltip button - Show the tooltip portion in the message.
             if reaction and reaction.emoji == 'ℹ️':
                 if not self.tooltip_enabled:
                     self.tooltip_enabled = True
@@ -498,21 +489,13 @@ time is eligible to be exploded. Re-rolling snakes is only possible if that part
                     await self.message.edit(content=content_with_tooltip)
                 return
 
-
-            # Query button - Audit the roll history with a DM
-            if reaction and reaction.emoji == '🔎':
-                msg = f'Transparent roll log for https://discordapp.com/channels/\
-{reaction.message.channel.guild.id}/\
-{reaction.message.channel.id}/\
-{reaction.message.id}'
-                msg += "\n```" + "\n".join([str(_) for _ in self.pool.result_history]) + "```"
-                await self.message.channel.send(msg)
-                return
-
+            # Reset the tooltip state, in case this is a new step.
             self.tooltip = None
             self.tooltip_enabled = False
+            # Pass along the reaction response from the previous question.
             await self.steps[0](reaction)
             
+            # Progress the state of the question flow, until the final state.
             if len(self.steps) > 1:
                 self.steps.pop(0)
 

@@ -8,8 +8,7 @@ import asyncio
 import yaml
 import discord
 
-from sheets import load_sheets, check_valid_skill
-
+from sheets import SheetManager
 from rolling import RollerManager
 from util import to_emoji_str
 
@@ -103,16 +102,15 @@ class MiceDice(discord.Client):
 
     def __init__(self):
         super().__init__()
-
-        print("Initializing MiceDice...")
         self.roller = RollerManager()
-        self.sheets = {}
+        self.sheets = SheetManager(GOOGLE_CREDS_JSON, GOOGLE_SHEETS_URL, self.get_guild(SERVER_ID))
 
 
     async def on_ready(self):
-        self.sheets = {}
+        print("Initializing MiceDice...")
         if USE_SHEETS:
-            self.sheets = load_sheets(GOOGLE_CREDS_JSON, GOOGLE_SHEETS_URL, [_.id for _ in self.get_guild(SERVER_ID).members])
+            print("  Loading google sheets for players...")
+            await self.sheets.load()
         print('MiceDice bot ready to play!')
 
 
@@ -141,14 +139,9 @@ class MiceDice(discord.Client):
             await self.roller.create(message.author, message.channel, num_dice=num_dice, obstacle=obstacle, reason=reason)
         elif m.match(RATING_REGEX) and USE_SHEETS:
             progress = m.group(1) == 'progress'
-            who = m.group(2)
-            if who: 
-                uid_matcher = ValueRetainingRegexMatcher(who)
-                if uid_matcher.match(USER_ID_REGEX):
-                    user = discord.utils.get(message.guild.members, id=int(uid_matcher.group(1)))
-                    who = user.display_name if user else discord.utils.escape_mentions(who)
-            skill = m.group(3)
-            await self.check_rating(message, who, skill, progress)
+            skill = m.group(2)
+            sheet = await self.sheets.get_sheet(message.author)
+            await sheet.check_rating(message, who, skill, progress)
         elif m.match(USAGE_REGEX):
             await self.usage(message)
 
@@ -161,60 +154,6 @@ class MiceDice(discord.Client):
         # If the reaction was to a "roll build" comment, and the reactor is the owner of it...
         if reaction.message.author.id == self.user.id:
             await self.roller.handle_event(user, reaction)
-
-
-    async def _render_rating(self, player, skill, progress):
-        sheet = self.sheets[player.id]
-        sheet.sync()
-        rating = sheet.get_rating(skill)
-
-        if not rating:
-            return f'{player.display_name}\'s {skill} rating: **Not yet learning!**'
-        
-        msg = f'{player.display_name}\'s {skill} rating: **{"Learning!" if rating == "x" else rating}**'
-        if progress:
-            success = sheet.get_success(skill)
-            fail = sheet.get_fail(skill)
-            if rating == 'x':
-                # Learning...
-                nature = sheet.get_rating('nature')
-                mani = sheet.get_rating('manipulator')
-                msg += ' -- [progress: ' + '✓' * (fail + success) + ' ' + '◯ ' * (nature - fail - success) + ']'
-            else:
-                msg += ' -- [*fail*: ' + '✓' * fail + ' ' + '◯ ' * (rating - fail - 1) + \
-                        ' | *success*: ' + '✓' * success + ' ' + '◯ ' * (rating - success) + ']'
-        return msg
-
-
-    async def check_rating(self, message, who, skill, progress=False):
-        if not check_valid_skill(skill):
-            await message.channel.send(f'{skill} is not a valid skill.')
-            return
-
-        # GM case, default behavior (check everyone)
-        if GM_ROLE in [_.name for _ in message.author.roles] and not who:
-            players = [member for member in message.channel.members if member.id in self.sheets]
-            msg = f'GM is checking everyone\'s **{skill}** ratings...\n>>> '
-            for player in players:
-                msg += await self._render_rating(player, skill, progress)
-            await message.channel.send(msg)
-            return
-
-        # Find person specified, otherwise make it the person sending the query
-        if who:
-            who = discord.utils.find(lambda m: who in [m.name, m.nick, m.id], message.channel.members)
-            if not who:
-                await message.channel.send(f'Could not find player "**{who}**".')
-                return
-        else:
-            who = self.message.author
-
-        if who.id not in self.sheets:
-            await message.channel.send(f'**{who.display_name}** has no character sheet.')
-            return
-        
-        msg = await self._render_rating(who, skill, progress)
-        await message.channel.send(msg)
 
 
     async def usage(self, message):

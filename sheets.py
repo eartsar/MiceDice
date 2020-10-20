@@ -24,80 +24,63 @@ PROGRESSIONS = BASE_STATS + SKILL_LIST
 DISCORD_ID_CELL = 'A1'
 
 
-def check_valid_skill(skill):
-    return skill in PROGRESSIONS
 
-
-def load_sheets(creds_path, sheet_url, player_discord_ids):
-    '''Given a sheets URL, and a list of player discord IDs, return a
-    dictionary of discord_id --> GoogleBackedSheet object'''
-    print("  Loading google sheets for players...")
-    player_discord_ids = [str(_) for _ in player_discord_ids]
+class SheetManager():
+    def __init__(self, creds_path, sheet_url, guild):
+        '''Given a sheets URL, and a list of player discord IDs, return a
+        dictionary of discord_id --> GoogleBackedSheet object'''
+        self.creds_path = creds_path
+        self.sheet_url = sheet_url
+        self.guild = guild
+        self.sheets_cache = {}
     
-    # Authenticate to google sheets, get creds
-    # credentials = ServiceAccountCredentials.from_json_keyfile_name(creds_path, SCOPES)
-    
-    # Make the gspread client. This makes getting values easy.
-    # gc = gspread.authorize(credentials)
-    # gc.session = AuthorizedSession(credentials)
-    # worksheets = gc.open_by_url(sheet_url).worksheets()
 
-    # Make the pygsheets client. This makes getting values easy
-    gc = pygsheets.authorize(service_file=creds_path)
-    worksheets = gc.open_by_url(sheet_url).worksheets()
+    async def load(self):
+        members = {_.id: _ for _ in self.guild.members}
+        
+        # Make the pygsheets client. This makes getting values easy
+        gc = pygsheets.authorize(service_file=creds_path)
+        worksheets = gc.open_by_url(sheet_url).worksheets()
 
-    sheets = {}
-    for sheet in worksheets:
-        discord_id = sheet.cell(DISCORD_ID_CELL).value
-        if discord_id in player_discord_ids:
-            discord_id = int(discord_id)
-            sheets[discord_id] = GoogleBackedSheet(sheet)
-            print(f"    Loaded google sheet for {discord_id}.")
-    return sheets
+        for sheet in worksheets:
+            discord_id = sheet.cell(DISCORD_ID_CELL).value
+            if discord_id in members:
+                discord_id = int(discord_id)
+                self.sheets_cache[discord_id] = GoogleBackedSheet(sheet, members[discord_id])
+        print(f"    Loaded {len(self.sheets_cache.keys())} sheets.")
 
 
-def access(data, cell):
-    col = ord(cell[0]) - ord('A')
-    row = int(cell[1:]) - 1
-    return data[row][col]
-
-def access_try_int(data, cell):
-    # Convert to an int if possible. If not, return as-is
-    val = access(data, cell)
-    try:
-        val = int(val)
-    except:
-        if val:
-            val = val.lower()
-    return val
+    async def get_sheet(self, user):
+        return self.sheets_cache[user.id] if user.id in self.sheets_cache else None
 
 
 class GoogleBackedSheet():
-    def __init__(self, sheet):
+    def __init__(self, sheet, owner):
         self.sheet = sheet
+        self.owner = owner
         self.sync()
 
 
-    def sync(self):
+    async def sync(self):
         '''Pulls all data from a sheet to local cache'''
         data = self.sheet.get_all_values()
 
         # do translations
-        self.player = access(data, CHARACTER_INDEX['player'])
-        self.name = access(data, CHARACTER_INDEX['name'])
-        self.home = access(data, CHARACTER_INDEX['home'])
-        self.age = access(data, CHARACTER_INDEX['age'])
-        self.fur = access(data, CHARACTER_INDEX['fur'])
-        self.rank = access(data, CHARACTER_INDEX['rank'])
-        self.specialty = access(data, CHARACTER_INDEX['specialty'])
-        self.cloak = access(data, CHARACTER_INDEX['cloak'])
-        self.weapon = access(data, CHARACTER_INDEX['weapon'])
+        self.player = self.access(data, CHARACTER_INDEX['player'])
+        self.name = self.access(data, CHARACTER_INDEX['name'])
+        self.home = self.access(data, CHARACTER_INDEX['home'])
+        self.age = self.access(data, CHARACTER_INDEX['age'])
+        self.fur = self.access(data, CHARACTER_INDEX['fur'])
+        self.rank = self.access(data, CHARACTER_INDEX['rank'])
+        self.specialty = self.access(data, CHARACTER_INDEX['specialty'])
+        self.cloak = self.access(data, CHARACTER_INDEX['cloak'])
+        self.weapon = self.access(data, CHARACTER_INDEX['weapon'])
 
         for base in BASE_STATS:
             val = {
-                'rating': access_try_int(data, CHARACTER_INDEX[base]['rating']),
-                'success': access_try_int(data, CHARACTER_INDEX[base]['success']),
-                'fail': access_try_int(data, CHARACTER_INDEX[base]['fail'])
+                'rating': self.access_try_int(data, CHARACTER_INDEX[base]['rating']),
+                'success': self.access_try_int(data, CHARACTER_INDEX[base]['success']),
+                'fail': self.access_try_int(data, CHARACTER_INDEX[base]['fail'])
             }
             setattr(self, base, val)
 
@@ -106,7 +89,7 @@ class GoogleBackedSheet():
             setattr(self, skill, { 'rating': None, 'success': 0, 'fail': 0 })
 
         for skill in CHARACTER_INDEX['skills']:
-            name = access(data, skill['name']).lower()
+            name = self.access(data, skill['name']).lower()
             # Missing skill in sheet, empty space
             if not name:
                 continue
@@ -114,9 +97,9 @@ class GoogleBackedSheet():
             if name not in SKILL_LIST:
                 raise Exception(f'{name} is not a real skill.')
             val = {
-                'rating': access_try_int(data, skill['rating']),
-                'success': access_try_int(data, skill['success']),
-                'fail': access_try_int(data, skill['fail']),
+                'rating': self.access_try_int(data, skill['rating']),
+                'success': self.access_try_int(data, skill['success']),
+                'fail': self.access_try_int(data, skill['fail']),
             }
             setattr(self, name, val)
 
@@ -124,12 +107,64 @@ class GoogleBackedSheet():
     def get_success(self, key):
         return self._get_skill_subvalue(key, 'success')
 
+
     def get_fail(self, key):
         return self._get_skill_subvalue(key, 'fail')
+
 
     def get_rating(self, key):
         return self._get_skill_subvalue(key, 'rating')
 
+
+    def check_valid_skill(self, skill):
+        return skill in PROGRESSIONS
+
+
     def _get_skill_subvalue(self, key, subvalue):
         return getattr(self, key)[subvalue] if hasattr(self, key) else None
+
+
+    def _access(self, data, cell):
+        col = ord(cell[0]) - ord('A')
+        row = int(cell[1:]) - 1
+        return data[row][col]
+
+
+    def _access_try_int(self, data, cell):
+        # Convert to an int if possible. If not, return as-is
+        val = self.access(data, cell)
+        try:
+            val = int(val)
+        except:
+            if val:
+                val = val.lower()
+        return val
+
+
+    async def _render_rating(self, player, skill, progress):
+        sheet = self.sheets[player.id]
+        await sheet.sync()
+        rating = sheet.get_rating(skill)
+
+        if not rating:
+            return f'{player.display_name}\'s {skill} rating: **Not yet learning!**'
+        
+        msg = f'{player.display_name}\'s {skill} rating: **{"Learning!" if rating == "x" else rating}**'
+        if progress:
+            success = sheet.get_success(skill)
+            fail = sheet.get_fail(skill)
+            if rating == 'x':
+                msg += ' -- [progress: ' + '✓' * (fail + success) + ' ' + '◯ ' * (nature - fail - success) + ']'
+            else:
+                msg += ' -- [*fail*: ' + '✓' * fail + ' ' + '◯ ' * (rating - fail - 1) + \
+                        ' | *success*: ' + '✓' * success + ' ' + '◯ ' * (rating - success) + ']'
+        return msg
+
+
+    async def check_rating(self, channel, skill, progress=False):
+        if not check_valid_skill(skill):
+            return await channel.send(f'{skill} is not a valid skill.')
+        
+        msg = await self._render_rating(who, skill, progress)
+        await message.channel.send(msg)
 

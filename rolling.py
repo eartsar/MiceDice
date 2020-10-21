@@ -380,7 +380,7 @@ But beware! Failing the roll will further tax your nature by the margin of failu
 
     async def _ask_relevant_trait(self, reaction):
         self.persona = NUM_MAP[reaction.emoji]
-        await self.message.edit(content=self._render_message('Do you a relevant trait?'))
+        await self.message.edit(content=self._render_message('Do you have a relevant trait?'))
         await self.new_options('👍', '👎')
 
 

@@ -1,3 +1,12 @@
+def clean_sheets_url(url):
+    if not url:
+        return url
+    index = url.find('/edit?')
+    if index != -1:
+        return url[:index]
+    return url
+
+
 def dice_result_to_emoji_str(result):
     from micedice import DICE_FACE_EMOJIS
     '''Converts a list of d6 numbers to emojis, then joins by spaces.'''

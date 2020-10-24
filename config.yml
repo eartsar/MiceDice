@@ -10,9 +10,16 @@ server_id: <discord_server_id>
 # Set to true if you want to use snake, sword, axe emojis, rather than number emojis
 use_icon_emojis: true
 
+# This bot may need to persist certain data. It currently uses sqlite3 for persistence.
+#
+# Currently, the following features leverage this peristance:
+#  - Character profiles (for google sheets integration, to register/select character sheets)
+sqlite3_database_path: ./micedice.db
 
-# =========GOOGLE SHEETS (OPTIONAL)=========
-# Set to true to use google sheets integration (totally hacked together)
+
+# =========CHARACTER SHEETS (OPTIONAL)=========
+# Google sheets integration is in its very early stages.
+# Set to true to use google sheets integration
 use_google_sheets: false
 
 # Path to the Google Application Service Account Credentials File (tm) (c) (r)

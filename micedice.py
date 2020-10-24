@@ -10,6 +10,7 @@ import discord
 
 from sheets import SheetManager
 from rolling import RollerManager
+from persist import DatabaseManager
 
 
 parser = argparse.ArgumentParser(description='Run the MiceDice bot.')
@@ -25,6 +26,9 @@ with open(args.config, 'r') as f:
 BOT_TOKEN = config['bot_token']
 SERVER_ID = config['server_id']
 
+DB_FILE_PATH = config['sqlite3_database_path']
+
+
 # Experimental Google Sheets integration
 GOOGLE_CREDS_JSON = config['google_service_account_creds']
 GOOGLE_SHEETS_URL = config['google_sheets_url']
@@ -32,6 +36,7 @@ GOOGLE_SHEETS_URL = config['google_sheets_url']
 # Meh, I'll just use regexes to parse commands. Easy enough.
 ROLL_BUILD_REGEX = re.compile(r'^\!roll$')
 ROLL_REGEX = re.compile(r'\!roll (\d+)(?:\s?[Oo][Bb]\s?(\d))?(?: for ?(.+))?')
+PROFILE_REGEX = re.compile(r'\!profile (register|select|unregister)(?:\s(.+))?')
 RATING_REGEX = re.compile(r'\!(rating|progress)(?: (.+))? (.+)')
 
 USER_ID_REGEX = re.compile(r'<@!(\d+)>')
@@ -97,15 +102,15 @@ class MiceDice(discord.Client):
 
     def __init__(self):
         super().__init__()
+        self.db = DatabaseManager(DB_FILE_PATH)
         self.roller = RollerManager()
-        self.sheets = SheetManager(GOOGLE_CREDS_JSON, GOOGLE_SHEETS_URL, self.get_guild(SERVER_ID))
+        self.sheets = SheetManager(GOOGLE_CREDS_JSON, self.db)
 
 
     async def on_ready(self):
         print("Initializing MiceDice...")
-        if USE_SHEETS:
-            print("  Loading google sheets for players...")
-            await self.sheets.load()
+        await self.db.initialize()
+        await self.sheets.initialize()
         print('MiceDice bot ready to play!')
 
 
@@ -132,6 +137,18 @@ class MiceDice(discord.Client):
             obstacle = int(m.group(2)) if m.group(2) else None
             reason = m.group(3)
             await self.roller.create(message.author, message.channel, num_dice=num_dice, obstacle=obstacle, reason=reason)
+        elif m.match(PROFILE_REGEX):
+            from util import clean_sheets_url
+            await message.edit(suppress=True)
+            operation = m.group(1)
+            url = clean_sheets_url(m.group(2))
+            if operation == 'register' and url:
+                await self.sheets.register(message.author, url)
+            elif operation == 'unregister' and url:
+                await self.sheets.unregister(message.author, url)
+            elif operation == 'select':
+                await self.sheets.initiate_choose_profile(message.author, message.channel)
+            
         elif m.match(RATING_REGEX) and USE_SHEETS:
             progress = m.group(1) == 'progress'
             skill = m.group(2)
@@ -149,16 +166,17 @@ class MiceDice(discord.Client):
         # If the reaction was to a "roll build" comment, and the reactor is the owner of it...
         if reaction.message.author.id == self.user.id:
             await self.roller.handle_event(user, reaction)
+            await self.sheets.handle_event(user, reaction)
 
 
     async def usage(self, message):
         '''!help'''
-        await message.channel.send(
-                f'```Usage:\n'
-                f'\t!roll\n'
-                f'\t!roll <dice> [Ob <req>] [for <reason>]\n'
-                f'```'
-        )
+        await message.channel.send('''```Usage:
+    !roll
+    !roll <dice> [Ob <req>] [for <reason>]
+    !profile select
+    !profile register <url>
+    !profile unregister <url>```''')
 
 
 def main():

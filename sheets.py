@@ -1,6 +1,6 @@
 import os.path
+import asyncio
 import pygsheets
-from oauth2client.service_account import ServiceAccountCredentials
 
 from cells import sheet_index
 
@@ -26,20 +26,66 @@ DISCORD_ID_CELL = 'A1'
 
 
 class SheetManager():
-    def __init__(self, creds_path, sheet_url, guild):
-        '''Given a sheets URL, and a list of player discord IDs, return a
-        dictionary of discord_id --> GoogleBackedSheet object'''
+    def __init__(self, creds_path, db_manager):
         self.creds_path = creds_path
-        self.sheet_url = sheet_url
-        self.guild = guild
+        self.db_manager = db_manager
         self.sheets_cache = {}
+        self.profile_selector_cache_by_message = {}
+        self.profile_selector_cache_by_request = {}
+        self.lock = asyncio.Lock()
+
+
+    def _generate_request_key(self, user, channel):
+        return str(user.id) + "_" + str(channel.id)
+
+
+    async def uncache_profile_selector(self, profile_selector):
+        async with self.lock:
+            key = self._generate_request_key(profile_selector.owner, profile_selector.message)
+            del self.profile_selector_cache_by_message[profile_selector.message.id]
+            del self.profile_selector_cache_by_request[key]
+
+
+    async def cache_profile_selector(self, profile_selector):
+        async with self.lock:
+            key = self._generate_request_key(profile_selector.owner, profile_selector.message)
+            self.profile_selector_cache_by_message[profile_selector.message.id] = profile_selector
+            self.profile_selector_cache_by_request[key] = profile_selector
     
 
-    async def load(self):
-        members = {_.id: _ for _ in self.guild.members}
+    async def initialize(self):
+        async with self.lock:
+            # Make the pygsheets client. This makes getting values easy
+            print("  Authenticating to google web services...")
+            gc = pygsheets.authorize(service_file=self.creds_path)
+            print("  Done.")
+
+
+    async def handle_event(self, user, reaction):
+        # If not a "roll" message, bail
+        if reaction.message.id in self.profile_selector_cache_by_message:
+            # If the reaction is from the owner, and a valid option, interpet it. Otherwise, purge.
+            profile_selector = self.profile_selector_cache_by_message[reaction.message.id]
+            if profile_selector.owner.id == user.id and reaction.count > 1:
+                await profile_selector.select(reaction=reaction)
+            else:
+                await reaction.remove(user)
         
-        # Make the pygsheets client. This makes getting values easy
-        gc = pygsheets.authorize(service_file=creds_path)
+    
+    async def register(self, user, url):
+        await self.db_manager.add_profile(user, url)
+
+
+    async def unregister(self, user, url):
+        await self.db_manager.delete_profile(user, url)
+
+
+    async def use_profile(self, user, url):
+        print(f"{user.id} using profile {url}")
+
+
+    async def load(self, user):
+        # Grab the URL to the sheet stored in the database, load it
         worksheets = gc.open_by_url(sheet_url).worksheets()
 
         for sheet in worksheets:
@@ -50,8 +96,75 @@ class SheetManager():
         print(f"    Loaded {len(self.sheets_cache.keys())} sheets.")
 
 
+    async def initiate_choose_profile(self, user, channel):
+        key = self._generate_request_key(user, channel)
+        if key in self.profile_selector_cache_by_request:
+            self.profile_selector_cache_by_request[key].cancel()
+        
+        profile_selector = ProfileSelector(self, user, channel)
+        await profile_selector.initialize()
+        await self.cache_profile_selector(profile_selector)
+        profile_urls = await self.db_manager._get_profile_urls(user)
+        await profile_selector.offer_profiles(profile_urls)
+        
+
     async def get_sheet(self, user):
         return self.sheets_cache[user.id] if user.id in self.sheets_cache else None
+
+
+
+class ProfileSelector():
+    def __init__(self, manager, owner, channel):
+        self.manager = manager
+        self.owner = owner
+        self.channel = channel
+        self.profile_choices = {}
+        self.lock = asyncio.Lock()
+
+
+    async def initialize(self):
+        self.message = await self.channel.send(f'{self.owner.mention} - Initializing...')
+
+
+    async def offer_profiles(self, profiles):
+        nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+        
+        for i in range(len(profiles)):
+            self.profile_choices[nums[i]] = profiles[i]
+        
+        choices = '\n'.join(['> ' + nums[i] + '  -  `' + profiles[i] + '`' for i in range(len(profiles))])
+        msg = f'{self.owner.mention} - Select a profile\n\n{choices}'
+        await self.message.edit(content=msg)
+        await self.message.clear_reactions()
+        for emoji in nums[:len(profiles)]:
+            await self.message.add_reaction(emoji)
+        await self.message.add_reaction('❌')
+
+
+    async def cancel(self):
+        await self.message.edit(content=f'{self.owner.mention} - Profile select cancelled.')
+        await self.message.clear_reactions()
+        await self.manager.uncache_profile_selector(self)
+
+
+    async def select(self, reaction=None):
+        # Lock prevents responses from interrupting previous runs while finishing
+        # work, like loading emoji options for a particular question.
+        async with self.lock:
+            # Assess the response to the previous prompt.
+            # Cancel button - close out the builder.
+            if reaction and reaction.emoji == '❌':
+                print('blah')
+                await self.cancel()
+                return
+            else:
+                await self.message.edit(content=f'{self.owner.mention} - Using profile `{self.profile_choices[reaction.emoji]}`')
+                await self.manager.use_profile(self.owner, self.profile_choices[reaction.emoji])
+                await self.message.clear_reactions()
+                await self.manager.uncache_profile_selector(self)
+
+
+
 
 
 class GoogleBackedSheet():

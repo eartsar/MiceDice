@@ -2,6 +2,8 @@ import os.path
 import asyncio
 import pygsheets
 
+from asgiref.sync import sync_to_async
+
 from cells import sheet_index
 
 
@@ -20,9 +22,6 @@ SKILL_LIST = ['administrator', 'apiarist', 'archivist', 'armorer', 'baker', 'boa
                 'survivalist', 'weather watcher', 'weaver']
 PROGRESSIONS = BASE_STATS + SKILL_LIST
 
-# The cell that contains the corresponding player's ID
-DISCORD_ID_CELL = 'A1'
-
 
 
 class SheetManager():
@@ -33,6 +32,14 @@ class SheetManager():
         self.profile_selector_cache_by_message = {}
         self.profile_selector_cache_by_request = {}
         self.lock = asyncio.Lock()
+
+
+    async def initialize(self):
+        async with self.lock:
+            # Just test the authentication to google services via service account
+            print("  Authenticating to google web services...")
+            await self.get_gc()
+            print("  Done.")
 
 
     def _generate_request_key(self, user, channel):
@@ -53,12 +60,8 @@ class SheetManager():
             self.profile_selector_cache_by_request[key] = profile_selector
     
 
-    async def initialize(self):
-        async with self.lock:
-            # Make the pygsheets client. This makes getting values easy
-            print("  Authenticating to google web services...")
-            gc = pygsheets.authorize(service_file=self.creds_path)
-            print("  Done.")
+    async def get_gc(self):
+        return await sync_to_async(pygsheets.authorize)(service_file=self.creds_path)
 
 
     async def handle_event(self, user, reaction):
@@ -72,44 +75,56 @@ class SheetManager():
                 await reaction.remove(user)
         
     
-    async def register(self, user, url):
-        await self.db_manager.add_profile(user, url)
+    async def register_profile(self, channel, user, key):
+        was_added = await self.db_manager.add_profile(user, key)
+        msg = 'Profile registered' if was_added else 'A profile already exists with that key'
+        await channel.send(f'{user.mention} - {msg}.')
 
 
-    async def unregister(self, user, url):
-        await self.db_manager.delete_profile(user, url)
+    async def unregister_profile(self, channel, user, key):
+        was_deleted = await self.db_manager.delete_profile(user, key)
+        msg = 'Profile unregistered' if was_deleted else 'No profile found with that key'
+        await channel.send(f'{user.mention} - {msg}.')
 
 
-    async def use_profile(self, user, url):
-        print(f"{user.id} using profile {url}")
-
-
-    async def load(self, user):
-        # Grab the URL to the sheet stored in the database, load it
-        worksheets = gc.open_by_url(sheet_url).worksheets()
-
-        for sheet in worksheets:
-            discord_id = sheet.cell(DISCORD_ID_CELL).value
-            if discord_id in members:
-                discord_id = int(discord_id)
-                self.sheets_cache[discord_id] = GoogleBackedSheet(sheet, members[discord_id])
-        print(f"    Loaded {len(self.sheets_cache.keys())} sheets.")
+    async def use_profile(self, user, key):
+        sheet = self.sheets_cache[user.id] if user.id in self.sheets_cache else GoogleBackedSheet(self, key)
+        await self.db_manager.update_current(user, key)
+        self.sheets_cache[user.id] = sheet
 
 
     async def initiate_choose_profile(self, user, channel):
         key = self._generate_request_key(user, channel)
         if key in self.profile_selector_cache_by_request:
-            self.profile_selector_cache_by_request[key].cancel()
+            await self.profile_selector_cache_by_request[key].cancel()
         
         profile_selector = ProfileSelector(self, user, channel)
         await profile_selector.initialize()
         await self.cache_profile_selector(profile_selector)
-        profile_urls = await self.db_manager._get_profile_urls(user)
-        await profile_selector.offer_profiles(profile_urls)
+        profile_keys = await self.db_manager._get_profile_keys(user)
+        if not profile_keys:
+            profile_selector.message.edit(f'{user.mention} - No profiles registered. Register with `!profile register <url|key>`.')
+        await profile_selector.offer_profiles(profile_keys)
         
 
-    async def get_sheet(self, user):
-        return self.sheets_cache[user.id] if user.id in self.sheets_cache else None
+    async def display(self, user, channel):
+        if user.id not in self.sheets_cache:
+            key = await self.db_manager.get_current(user)
+            if key:
+                await self.use_profile(user, key)
+
+        if user.id not in self.sheets_cache:
+            return await channel.send(f'{user.mention} - No profile selected. Select with `!profile select`.')
+
+        sheet = self.sheets_cache[user.id]
+        await sheet.pull()
+        msg = f'''```
+Name: {sheet.name}
+Nature: {sheet.get_rating('nature')}
+Health: {sheet.get_rating('health')}
+Will: {sheet.get_rating('will')}
+```'''
+        return await channel.send(f'{user.mention} - Your current profile:\n{msg}')        
 
 
 
@@ -168,32 +183,39 @@ class ProfileSelector():
 
 
 class GoogleBackedSheet():
-    def __init__(self, sheet, owner):
-        self.sheet = sheet
-        self.owner = owner
-        self.sync()
+    def __init__(self, manager, google_sheet_key):
+        self.manager = manager
+        self.google_sheet_key = google_sheet_key
 
 
-    async def sync(self):
+    async def access_sheet(self):
+        gc = await self.manager.get_gc()
+        spreadsheet = await sync_to_async(gc.open_by_key)(self.google_sheet_key)
+        worksheet = await sync_to_async(spreadsheet.worksheet_by_title)('Character Sheet')
+        return worksheet
+
+
+    async def pull(self):
         '''Pulls all data from a sheet to local cache'''
-        data = self.sheet.get_all_values()
+        sheet = await self.access_sheet()
+        data = await sync_to_async(sheet.get_all_values)()
 
         # do translations
-        self.player = self.access(data, CHARACTER_INDEX['player'])
-        self.name = self.access(data, CHARACTER_INDEX['name'])
-        self.home = self.access(data, CHARACTER_INDEX['home'])
-        self.age = self.access(data, CHARACTER_INDEX['age'])
-        self.fur = self.access(data, CHARACTER_INDEX['fur'])
-        self.rank = self.access(data, CHARACTER_INDEX['rank'])
-        self.specialty = self.access(data, CHARACTER_INDEX['specialty'])
-        self.cloak = self.access(data, CHARACTER_INDEX['cloak'])
-        self.weapon = self.access(data, CHARACTER_INDEX['weapon'])
+        self.player = self._access(data, CHARACTER_INDEX['player'])
+        self.name = self._access(data, CHARACTER_INDEX['name'])
+        self.home = self._access(data, CHARACTER_INDEX['home'])
+        self.age = self._access(data, CHARACTER_INDEX['age'])
+        self.fur = self._access(data, CHARACTER_INDEX['fur'])
+        self.rank = self._access(data, CHARACTER_INDEX['rank'])
+        self.specialty = self._access(data, CHARACTER_INDEX['specialty'])
+        self.cloak = self._access(data, CHARACTER_INDEX['cloak'])
+        self.weapon = self._access(data, CHARACTER_INDEX['weapon'])
 
         for base in BASE_STATS:
             val = {
-                'rating': self.access_try_int(data, CHARACTER_INDEX[base]['rating']),
-                'success': self.access_try_int(data, CHARACTER_INDEX[base]['success']),
-                'fail': self.access_try_int(data, CHARACTER_INDEX[base]['fail'])
+                'rating': self._access_try_int(data, CHARACTER_INDEX[base]['rating']),
+                'success': self._access_try_int(data, CHARACTER_INDEX[base]['success']),
+                'fail': self._access_try_int(data, CHARACTER_INDEX[base]['fail'])
             }
             setattr(self, base, val)
 
@@ -202,17 +224,17 @@ class GoogleBackedSheet():
             setattr(self, skill, { 'rating': None, 'success': 0, 'fail': 0 })
 
         for skill in CHARACTER_INDEX['skills']:
-            name = self.access(data, skill['name']).lower()
+            name = self._access(data, skill['name']).lower()
             # Missing skill in sheet, empty space
             if not name:
                 continue
             # Skill with bad name in sheet, big deal
             if name not in SKILL_LIST:
-                raise Exception(f'{name} is not a real skill.')
+                continue
             val = {
-                'rating': self.access_try_int(data, skill['rating']),
-                'success': self.access_try_int(data, skill['success']),
-                'fail': self.access_try_int(data, skill['fail']),
+                'rating': self._access_try_int(data, skill['rating']),
+                'success': self._access_try_int(data, skill['success']),
+                'fail': self._access_try_int(data, skill['fail']),
             }
             setattr(self, name, val)
 
@@ -245,7 +267,7 @@ class GoogleBackedSheet():
 
     def _access_try_int(self, data, cell):
         # Convert to an int if possible. If not, return as-is
-        val = self.access(data, cell)
+        val = self._access(data, cell)
         try:
             val = int(val)
         except:
@@ -280,4 +302,3 @@ class GoogleBackedSheet():
         
         msg = await self._render_rating(user, skill, progress)
         await message.channel.send(msg)
-

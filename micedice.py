@@ -36,7 +36,7 @@ GOOGLE_SHEETS_URL = config['google_sheets_url']
 # Meh, I'll just use regexes to parse commands. Easy enough.
 ROLL_BUILD_REGEX = re.compile(r'^\!roll$')
 ROLL_REGEX = re.compile(r'\!roll (\d+)(?:\s?[Oo][Bb]\s?(\d))?(?: for ?(.+))?')
-PROFILE_REGEX = re.compile(r'\!profile (register|select|unregister)(?:\s(.+))?')
+PROFILE_REGEX = re.compile(r'\!profile (register|select|unregister|display)(?:\s(.+))?')
 RATING_REGEX = re.compile(r'\!(rating|progress)(?: (.+))? (.+)')
 
 USER_ID_REGEX = re.compile(r'<@!(\d+)>')
@@ -80,20 +80,6 @@ else:
     }
 
 
-class ValueRetainingRegexMatcher:
-    '''This is a load of BS to just get around not using PEP 572'''
-    def __init__(self, match_str):
-        self.match_str = match_str
-
-    def match(self, regex):
-        self.retained = re.match(regex, self.match_str)
-        return bool(self.retained)
-
-    def group(self, i):
-        return self.retained.group(i)
-
-
-
 class MiceDice(discord.Client):
     '''The MiceDice discort bot client.
 
@@ -128,6 +114,7 @@ class MiceDice(discord.Client):
             message.content = ALIASES[message.content]
 
         # Match against the right command, grab args, and go
+        from util import ValueRetainingRegexMatcher
         m = ValueRetainingRegexMatcher(message.content)
         
         if m.match(ROLL_BUILD_REGEX):
@@ -138,16 +125,19 @@ class MiceDice(discord.Client):
             reason = m.group(3)
             await self.roller.create(message.author, message.channel, num_dice=num_dice, obstacle=obstacle, reason=reason)
         elif m.match(PROFILE_REGEX):
-            from util import clean_sheets_url
+            from util import get_sheets_key
             await message.edit(suppress=True)
             operation = m.group(1)
-            url = clean_sheets_url(m.group(2))
-            if operation == 'register' and url:
-                await self.sheets.register(message.author, url)
-            elif operation == 'unregister' and url:
-                await self.sheets.unregister(message.author, url)
+            key = get_sheets_key(m.group(2))
+            if operation == 'register' and key:
+                await self.sheets.register_profile(message.channel, message.author, key)
+            elif operation == 'unregister' and key:
+                await self.sheets.unregister_profile(message.channel, message.author, key)
             elif operation == 'select':
                 await self.sheets.initiate_choose_profile(message.author, message.channel)
+            elif operation == 'display':
+                await self.sheets.display(message.author, message.channel)
+
             
         elif m.match(RATING_REGEX) and USE_SHEETS:
             progress = m.group(1) == 'progress'

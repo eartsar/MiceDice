@@ -10,6 +10,7 @@ python = "^3.8"
 PyYAML = "^5.3.1"
 pygsheets = {git = "git@github.com:nithinmurali/pygsheets.git"}
 aiosqlite = "^0.15.0"
+asgiref = "^3.3.0"
 
 [tool.poetry.dev-dependencies]
 

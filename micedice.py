@@ -166,7 +166,8 @@ class MiceDice(discord.Client):
     !roll <dice> [Ob <req>] [for <reason>]
     !profile select
     !profile register <url>
-    !profile unregister <url>```''')
+    !profile unregister <url>
+    !profile display```''')
 
 
 def main():

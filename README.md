@@ -10,7 +10,7 @@ Yeah...
 
 ## I want to run it.
 1. [Make a bot account for Discord.](https://discordpy.readthedocs.io/en/latest/discord.html)
-2. Install the requirements. This project uses [poetry](https://python-poetry.org/), and includes a `pyproject.toml` file (`poetry install`), but all that is needed is python 3, `discord.py`, `PyYAML`, `pygsheets`, and `oauth2client`, if you want to install those yourself.
+2. Install the requirements. This project uses [poetry](https://python-poetry.org/), and includes a `pyproject.toml` file (`poetry install`).
 3. Edit the `config.yml` file, and configure as needed.
 4. Run the thing  
 `python3 micedice.py --config /path/to/config.yml`
@@ -37,5 +37,4 @@ Setting up a Google Application... Application
     - Make sure you create credentials for a SERVICE ACCOUNT associated with the app.
 - Download the credentials JSON file. This is referenced in the MiceDice configuration.
 - Copy the [template sheet](https://docs.google.com/spreadsheets/d/1Ehj1Kc933fx8MCDSob_gUi1sJPIKDA0Yq-TAsKV7gQk/)
-- Share the sheet with the service acount email address.
-- For each sheet, put the discord user's ID in the top left cell
+- Share the sheet with the service acount email address, or make anyone with the link have view/edit permissions.

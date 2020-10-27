@@ -133,7 +133,7 @@ class SheetManager():
         await self.cache_profile_selector(profile_selector)
         profile_keys = await self.db_manager._get_profile_keys(user)
         if not profile_keys:
-            profile_selector.message.edit(f'{user.mention} - No profiles registered. Register with `!profile register <url|key>`.')
+            profile_selector.message.edit(content=f'{user.mention} - No profiles registered. Register with `!profile register <url|key>`.')
         await profile_selector.offer_profiles(profile_keys)
         
 

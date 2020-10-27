@@ -51,12 +51,13 @@ class DatabaseManager():
         async with aiosqlite.connect(self.dbpath) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(f'SELECT sheets_key FROM PLAYER_SHEETS WHERE user_id = {user.id} AND current = TRUE') as cursor:
-                return (await cursor.fetchone())['sheets_key']
+                result = await cursor.fetchone()
+                return result['sheets_key'] if result else None
 
 
     async def update_current(self, user, key):
         async with aiosqlite.connect(self.dbpath) as db:
-            await db.execute(f"UPDATE PLAYER_SHEETS SET current = FALSE WHERE user_id = {user.id} AND sheets_key = '{key}' AND current = TRUE")
+            await db.execute(f"UPDATE PLAYER_SHEETS SET current = FALSE WHERE user_id = {user.id} AND current = TRUE")
             await db.commit()
             await db.execute(f"UPDATE PLAYER_SHEETS SET current = TRUE WHERE user_id = {user.id} AND sheets_key = '{key}'")
             await db.commit()

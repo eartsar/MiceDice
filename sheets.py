@@ -1,6 +1,7 @@
 import os.path
 import asyncio
 import functools 
+import textwrap
 
 import pygsheets
 from asgiref.sync import sync_to_async
@@ -138,15 +139,44 @@ class SheetManager():
 
     @with_profile
     async def display(self, user, channel, sheet=None):
-        to_render = '\n'.join([await sheet._render_rating(skill) for skill in PROGRESSIONS if sheet.get_rating(skill)])
-        msg = f'''```
- {'='*(len(sheet.name) + 2)}
-| {sheet.name} |
-==============================================
-SKILL                 SUCCESS      FAIL
-----------------------------------------------
-{to_render}
-==============================================
+        # to_render = '\n'.join([await sheet._render_rating(skill) for skill in PROGRESSIONS if sheet.get_rating(skill)])
+        top_left_col = [f'{sheet.name}'.ljust(21), f'{sheet.rank}'.ljust(21), ''.ljust(21)]
+        desc = f'A {sheet.age} year old mouse from {sheet.home} with {sheet.fur} colored fur. '
+        desc += f'They wield a {sheet.weapon} and don a {sheet.cloak} cloak.'
+        top_right_col = textwrap.wrap(desc, 71)
+
+        rendered_ratings = [await sheet._render_rating(skill) for skill in PROGRESSIONS if sheet.skills[skill]['rating']]
+        skills_left = rendered_ratings[:len(rendered_ratings)//2]
+        skills_right = rendered_ratings[len(rendered_ratings)//2:]
+
+        if len(skills_left) < len(skills_right):
+            skills_left.append(skills_right.pop(0))
+            skills_right.append('')
+
+        skills_section = '\n'.join([f'{skills_left[i]}  {skills_right[i]}' for i in range(len(skills_left))])
+
+        box = {True: '▪', False: '▫'}
+        wises = [f"{wise['name'].ljust(33)}  {box[wise['pass']]}  {box[wise['fail']]}  " + 
+                    f"{box[wise['fate']]}  {box[wise['persona']]}" for wise in sheet.wises]
+        traits = [f"{trait['name'].ljust(21)}  Lv {trait['level']}        " + 
+                    f"{box[trait['uses'][0]]} {box[trait['uses'][1]]}" for trait in sheet.traits]
+        if len(wises) > len(traits):
+            wises += ['' for _ in range(len(wises) - len(traits))]
+        if len(traits) > len(wises):
+            traits += ['' for _ in range(len(traits) - len(wises))]
+        wises_and_traits = '\n'.join([f'{wises[i]}   {traits[i]}' for i in range(len(wises))])
+        
+        msg = f'''```\
+{top_left_col[0]}{top_right_col[0]}
+{top_left_col[1]}{top_right_col[1]}
+
+SKILL                  SUCCESS     FAIL         SKILL                  SUCCESS     FAIL
+---------------------------------------------------------------------------------------------
+{skills_section}
+
+WISE                               P  F  ⚀  !   TRAIT                  LEVEL       USES
+---------------------------------------------------------------------------------------------
+{wises_and_traits}
 ```'''
         return await channel.send(f'{user.mention} - Your current profile:\n{msg}')        
 
@@ -194,7 +224,6 @@ class ProfileSelector():
             # Assess the response to the previous prompt.
             # Cancel button - close out the builder.
             if reaction and reaction.emoji == '❌':
-                print('blah')
                 await self.cancel()
                 return
             else:
@@ -236,6 +265,8 @@ class GoogleBackedSheet():
         self.cloak = self._access(data, CHARACTER_INDEX['cloak'])
         self.weapon = self._access(data, CHARACTER_INDEX['weapon'])
         self.skills = {}
+        self.wises = []
+        self.traits = []
 
         for base in BASE_STATS:
             val = {
@@ -244,7 +275,7 @@ class GoogleBackedSheet():
                 'fail': self._access_try_int(data, CHARACTER_INDEX[base]['fail'])
             }
             self.skills[base] = val
-            
+
 
         # Initialize bare skills, then populate from sheet
         for skill in SKILL_LIST:
@@ -264,6 +295,34 @@ class GoogleBackedSheet():
                 'fail': self._access_try_int(data, skill['fail']),
             }
             self.skills[name] = val
+
+        self.wises = []
+        for wise in CHARACTER_INDEX['wises']:
+            name = self._access(data, wise['name']).lower()
+            # empty
+            if not name:
+                continue
+            val = {
+                'name': name,
+                'pass': self._access_try_bool(data, wise['pass']),
+                'fail': self._access_try_bool(data, wise['fail']),
+                'fate': self._access_try_bool(data, wise['fate']),
+                'persona': self._access_try_bool(data, wise['persona'])
+            }
+            self.wises.append(val)
+        
+        self.traits = []
+        for trait in CHARACTER_INDEX['traits']:
+            name = self._access(data, trait['name']).lower()
+            # empty
+            if not name:
+                continue
+            val = {
+                'name': name,
+                'level': self._access_try_int(data, trait['level']),
+                'uses': [self._access_try_bool(data, trait['uses'][0]), self._access_try_bool(data, trait['uses'][1])]
+            }
+            self.traits.append(val)
 
 
     def get_success(self, key):
@@ -303,19 +362,28 @@ class GoogleBackedSheet():
         return val
 
 
+    def _access_try_bool(self, data, cell):
+        return 'TRUE' == self._access(data, cell)
+
+
     async def _render_rating(self, skill):
-        if skill not in self.skills:
+        if skill not in self.skills or not self.skills[skill]['rating']:
             return
         
         values = self.skills[skill]
-        use_luck = self.get_rating(skill) == 'x'
-        success_fill = self.get_success(skill)
-        success_empty = self.get_rating(skill) - self.get_success(skill) if not use_luck else 7 - self.get_success(skill)
-        fail_fill = self.get_fail(skill) if not use_luck else 0
-        fail_empty = self.get_rating(skill) - self.get_fail(skill) - 1 if not use_luck else 0
+        use_luck = self.get_rating(skill) == 'x' or self.get_rating(skill) == '0'
 
-        skill_portion = f"{skill.title()}: {self.get_rating(skill) if not use_luck else '*'}"
-        success_portion = f"{'✓'*success_fill + '◯'*success_empty}"
-        fail_portion = f"{'✓'*fail_fill + '◯'*fail_empty}"
-        progress_portion = f"[ {success_portion}{' '*(10 - len(success_portion))} | {fail_portion}{' '*(9 - len(fail_portion))} ]"
-        return f"{skill_portion}{' '*(20 - len(skill_portion))}{progress_portion}"
+        success_fill = min(self.get_success(skill), 9)
+        success_empty = self.get_rating(skill) - self.get_success(skill) if not use_luck else 6 - self.get_success(skill)
+        success_empty = min(success_empty, 9 - success_fill)
+
+        fail_fill = self.get_fail(skill) if not use_luck else 0
+        fail_fill = min(fail_fill, 8)
+        fail_empty = self.get_rating(skill) - self.get_fail(skill) - 1 if not use_luck else 0
+        fail_empty = min(fail_empty, 8 - fail_fill)
+
+        skill_portion = f"{(skill.title() + ':').ljust(17)}{(str(self.get_rating(skill)) if not use_luck else '*').rjust(2)}    "
+        success_portion = f"{'▪'*success_fill + '▫'*success_empty}"
+        fail_portion = f"{'▪'*fail_fill + '▫'*fail_empty}"
+        progress_portion = f"{success_portion.ljust(9)}   {fail_portion.ljust(8)}   "
+        return f"{skill_portion}{progress_portion}"

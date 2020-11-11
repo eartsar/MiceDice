@@ -161,9 +161,9 @@ class SheetManager():
         traits = [f"{trait['name'].ljust(21)}  Lv {trait['level']}        " + 
                     f"{box[trait['uses'][0]]} {box[trait['uses'][1]]}" for trait in sheet.traits]
         if len(wises) > len(traits):
-            wises += ['' for _ in range(len(wises) - len(traits))]
+            traits += ['' for _ in range(len(wises) - len(traits))]
         if len(traits) > len(wises):
-            traits += ['' for _ in range(len(traits) - len(wises))]
+            wises += [' '*45 for _ in range(len(traits) - len(wises))]
         wises_and_traits = '\n'.join([f'{wises[i]}   {traits[i]}' for i in range(len(wises))])
         
         msg = f'''```\

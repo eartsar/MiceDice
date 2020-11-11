@@ -237,7 +237,7 @@ sheet_index = {
                 "uses": ["O59", "P59"]
             },
             {
-                "name": "C61",
+                "name": "J61",
                 "level": "M61",
                 "uses": ["O61", "P61"]
             }

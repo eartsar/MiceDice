@@ -11,6 +11,8 @@ from cells import sheet_index
 
 CHARACTER_INDEX = sheet_index['character']
 
+PROFILE_LIMIT = 5
+
 
 # Necessary permissions to interact with google sheets.
 SCOPES = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -134,6 +136,7 @@ class SheetManager():
         profile_keys = await self.db_manager._get_profile_keys(user)
         if not profile_keys:
             profile_selector.message.edit(content=f'{user.mention} - No profiles registered. Register with `!profile register <url|key>`.')
+            return
         await profile_selector.offer_profiles(profile_keys)
         
 
@@ -178,7 +181,7 @@ WISE                               P  F  ⚀  !   TRAIT                  LEVEL  
 ---------------------------------------------------------------------------------------------
 {wises_and_traits}
 ```'''
-        return await channel.send(f'{user.mention} - Your current profile:\n{msg}')        
+        return await channel.send(f'{user.mention} - Your current profile:\n{msg}')
 
 
 
@@ -192,17 +195,18 @@ class ProfileSelector():
 
 
     async def initialize(self):
-        self.message = await self.channel.send(f'{self.owner.mention} - Initializing...')
+        self.message = await self.channel.send(f'{self.owner.mention} - Loading profiles...')
 
 
     async def offer_profiles(self, profiles):
         nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
         
-        profiles = profiles[:5]
+        profiles = profiles[:PROFILE_LIMIT]
+        names = [await self.get_character_name_from_sheet(profile) for profile in profiles]
         for i in range(len(profiles)):
-            self.profile_choices[nums[i]] = profiles[i]
+            self.profile_choices[nums[i]] = (names[i], profiles[i])
         
-        choices = '\n'.join(['> ' + nums[i] + '  -  `' + profiles[i] + '`' for i in range(len(profiles))])
+        choices = '\n'.join(['> ' + nums[i] + '  -  **' + names[i] + '** `' + profiles[i] + '`' for i in range(len(profiles))])
         msg = f'{self.owner.mention} - Select a profile\n\n{choices}'
         await self.message.edit(content=msg)
         await self.message.clear_reactions()
@@ -227,11 +231,19 @@ class ProfileSelector():
                 await self.cancel()
                 return
             else:
-                await self.message.edit(content=f'{self.owner.mention} - Using profile `{self.profile_choices[reaction.emoji]}`')
-                await self.manager.use_profile(self.owner, self.profile_choices[reaction.emoji])
+                await self.message.edit(content=f'{self.owner.mention} - Using profile **{self.profile_choices[reaction.emoji][0]}**')
+                await self.manager.use_profile(self.owner, self.profile_choices[reaction.emoji][1])
                 await self.message.clear_reactions()
                 await self.manager.uncache_profile_selector(self)
 
+
+    async def get_character_name_from_sheet(self, key):
+        gc = await self.manager.get_gc()
+        spreadsheet = await sync_to_async(gc.open_by_key)(key)
+        worksheet = await sync_to_async(spreadsheet.worksheet_by_title)('Character Sheet')
+        cell = await sync_to_async(worksheet.cell)(sheet_index['character']['name'])
+        name = cell.value.strip()
+        return name.title() if name else 'Unnamed Character'
 
 
 

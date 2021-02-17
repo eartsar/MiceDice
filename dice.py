@@ -56,6 +56,8 @@ class DicePool():
         # tuples (successes, value)
         self.value_history = []
 
+        self.has_exploded = False
+
 
     def size(self):
         return len(self.dice)
@@ -92,13 +94,7 @@ class DicePool():
         self.result_history.append([die.face() for die in self.dice])
         self.value_history.append((self.num_successes(), self.value()))
         self.action_history.append(Operation.EXPLODE)
-
-
-    def can_reroll(self):
-        for die in self.dice:
-            if die.can_reroll():
-                return True
-        return False
+        self.has_exploded = True
 
 
     def _reroll(self, n):
@@ -148,6 +144,13 @@ class DicePool():
 
     def num_can_reroll(self):
         return len([die for die in self.dice if die.can_reroll()]) if self.dice else 0
+
+
+    def can_reroll(self):
+        return self.num_can_reroll() > 0
+
+    def can_reroll_all(self):
+        return not self.has_exploded and self.can_reroll()
 
 
     def num_can_explode(self):

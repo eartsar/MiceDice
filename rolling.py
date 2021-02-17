@@ -82,6 +82,14 @@ class RollerManager():
         
         # If the reaction is from the owner, and a valid option, interpet it. Otherwise, purge.
         roll = self.roll_cache_by_message[reaction.message.id]
+
+        # Exception - other players can offer help for that one step
+        if roll.getting_helpers:
+            if reaction.emoji == '✋' and roll.owner.id != user.id:
+                return
+            elif reaction.emoji == '✋' and roll.owner.id == user.id:
+                return await reaction.remove(user)
+
         if roll.owner.id == user.id and reaction.count > 1:
             await roll.next(reaction=reaction)
         else:
@@ -158,6 +166,7 @@ class InteractiveRoller(Roller):
         self.tooltip = None
         self.tooltip_enabled = False
         self.setting_options = True
+        self.getting_helpers = False
 
         # These are the linear steps to building a roll. As each gets executed, they'll get popped off the list.
         # This will have to change if I want to implement "undo" functionality, but that's a can of worms.
@@ -265,7 +274,11 @@ class InteractiveRoller(Roller):
 
     async def finish(self):
         end_index = self.message.content.find('\n>>> **Nudge the result?')
-        if end_index:
+
+        if end_index == -1:
+            end_index = self.message.content.find('\n>>> **Are you wise?**')
+
+        if end_index != -1:
             msg = self.message.content[:end_index]
             await self.message.edit(content=msg)
         await self.message.clear_reactions()
@@ -357,14 +370,16 @@ This will let you use your nature skill instead of beginner's luck, but at a cos
 
     async def _ask_num_helpers(self, reaction):
         self.with_gear = reaction.emoji =='👍'
+        self.getting_helpers = True
         self.tooltip = '''Any other player may assist (except in some cases) your test with a relevant skill. Doing so, however, will also \
 potentially rope them into the consequences of failure. A mouse may offer assistance risk-free if they have a relevant wise, too.'''
         await self.message.edit(content=self._render_message('How many helpers do you have? (+1 🎲 each)'))
-        await self.new_options('0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣')
+        await self.new_options('✋', '✅')
 
 
     async def _ask_nature_boost(self, reaction):
-        self.helpers = NUM_MAP[reaction.emoji]
+        self.helpers = next(_.count - 1 for _ in reaction.message.reactions if _.emoji == '✋')
+        self.getting_helpers = False
         self.tooltip = '''Tapping nature will give you a big boost for making checks, but at a cost. Unless the test is within your mousy \
 nature, doing this will immediately tax your nature by 1. In return, you get to add a number of dice to your pool equal to your nature skill. \
 But beware! Failing the roll will further tax your nature by the margin of failure!'''
@@ -421,10 +436,14 @@ likely to make the test handily, or fail no matter what, consider hampering your
 
         self.tooltip = 'Lobby your GM for a wise\'s relevance!'
         await self.message.edit(content=msg)
-        await self.new_options('👍', '👎')
+        await self.new_options('👍', '👎', '🏁')
 
 
     async def _nudge_roll_until_done(self, reaction):
+        if reaction and reaction.emoji == '🏁':
+            await self.finish()
+            return
+
         if self.is_wise == None:
             self.is_wise = reaction.emoji == '👍'
         exploded = reaction.emoji == '💥'
@@ -454,8 +473,10 @@ likely to make the test handily, or fail no matter what, consider hampering your
             options += ['💥']
         if self.is_wise and self.pool.can_reroll():
             msg += '\n  🔮 - Re-roll one snake! (-1 fate)'
+            options += ['🔮']
+        if self.is_wise and self.pool.can_reroll_all():
             msg += f'\n  🎭 - Re-roll all ({self.pool.num_can_reroll()}) snakes! (-1 persona)'
-            options += ['🔮', '🎭']
+            options += ['🎭']
         msg += '**'
 
         self.tooltip = '''Exploding axes will re-roll them for additional possible successes. Any die that lands on a six at any \

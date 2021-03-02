@@ -42,16 +42,16 @@ sheet_index = {
         "wises": [
             {
                 "name": "C18",
-                "pass": "F1F188",
-                "fail": "G18H18",
-                "fate": "H18I18",
+                "pass": "F18",
+                "fail": "G18",
+                "fate": "I18",
                 "persona": "I18"
             },
             {
                 "name": "C20",
-                "pass": "F2F200",
-                "fail": "G20H20",
-                "fate": "H20I20",
+                "pass": "F20",
+                "fail": "G20",
+                "fate": "H20",
                 "persona": "I20"
             },
             {
@@ -219,27 +219,27 @@ sheet_index = {
             {
                 "name": "C59",
                 "level": "F59",
-                "uses": "H59:I59"
+                "uses": ["H59", "I59"]
             },
             {
                 "name": "C61",
                 "level": "F61",
-                "uses": "H61:I61"
+                "uses": ["H61", "I61"]
             },
             {
                 "name": "C63",
                 "level": "F63",
-                "uses": "H63:I63"
+                "uses": ["H63", "I63"]
             },
             {
                 "name": "J59",
                 "level": "M59",
-                "uses": "O59:P59"
+                "uses": ["O59", "P59"]
             },
             {
-                "name": "C61",
+                "name": "J61",
                 "level": "M61",
-                "uses": "O61:P61"
+                "uses": ["O61", "P61"]
             }
         ],
         "hungry": "C73",

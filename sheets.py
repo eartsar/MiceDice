@@ -1,4 +1,3 @@
-import os.path
 import asyncio
 import functools 
 import textwrap
@@ -368,7 +367,7 @@ class GoogleBackedSheet():
         val = self._access(data, cell)
         try:
             val = int(val)
-        except:
+        except Exception:
             if val:
                 val = val.lower()
         return val

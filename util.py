@@ -53,7 +53,6 @@ def render_dice_pool(pool, with_history=False):
 
     msg = ''
     for operation, result, successes, value, changes in pool.get_history():
-        banked_axes = value - successes
         if operation == Operation.ROLL:
             msg += f'{dice_result_to_emoji_str(result)}    ➡️    `{successes}!`'
         else:

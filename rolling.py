@@ -1,5 +1,4 @@
 import asyncio
-import random
 from decimal import Decimal, ROUND_HALF_UP
 from abc import ABC, abstractmethod
 
@@ -149,20 +148,20 @@ class InteractiveRoller(Roller):
         super().__init__(manager, owner, channel)
         
         # Enter state hell.
-        self.has_skill = None
-        self.is_mousy = None
-        self.using_skill = None
+        self.has_skill = False
+        self.is_mousy = False
+        self.using_skill = False
         self.skill_level = 0
-        self.using_nature = None
+        self.using_nature = False
         self.nature_level = 0
-        self.using_luck = None
-        self.tapping_nature = None
-        self.with_gear = None
+        self.using_luck = False
+        self.tapping_nature = False
+        self.with_gear = False
         self.helpers = 0
         self.persona = 0
         self.trait = 0
-        self.with_tax = None
-        self.is_wise = None
+        self.with_tax = False
+        self.is_wise = False
         self.tooltip = None
         self.tooltip_enabled = False
         self.setting_options = True
@@ -444,8 +443,9 @@ likely to make the test handily, or fail no matter what, consider hampering your
             await self.finish()
             return
 
-        if self.is_wise == None:
+        if not self.is_wise:
             self.is_wise = reaction.emoji == '👍'
+        
         exploded = reaction.emoji == '💥'
         reroll_one = reaction.emoji == '🔮'
         reroll_all = reaction.emoji == '🎭'

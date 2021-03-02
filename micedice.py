@@ -1,10 +1,5 @@
-import sys
-import os
-import json
-import random
 import re
 import argparse
-import asyncio
 import yaml
 import discord
 
